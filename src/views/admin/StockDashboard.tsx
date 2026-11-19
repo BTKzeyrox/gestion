@@ -1,0 +1,109 @@
+// Tableau de bord du Stockage : valeur du stock, produits épuisés ou bas, ruptures proches, derniers mouvements. Les graphiques sont dans la page Graphiques (bouton en bas).
+// Utilisé par : StoragePage.tsx.
+// Pour modifier : lecture seule, un seul stockage à la fois (prop spaceId). Un clic sur Épuisés ou Stock bas ouvre l'onglet Produits avec le bon filtre (onOpenProducts). Textes FR/EN avec t(fr, en).
+import React, { useMemo } from 'react';
+import { AlertTriangle, Plus } from 'lucide-react';
+import { db } from '../../db/store';
+import { formatCurrencyAr } from '../../utils/formatUtils';
+import { todayMada } from '../../utils/stats';
+import { DEFAULT_STORAGE_ID, inSpace, runOutSoon, stockRows, stockValue } from '../../utils/stock';
+import { OpenGraphsButton } from '../../components/OpenGraphsButton';
+import type { StockFilter } from './StockTab';
+
+// Tableau de bord du Stockage (responsable seulement) : l'essentiel d'un coup d'œil. Lecture seule : rien ne se saisit ici.
+interface Props { lang: 'fr' | 'en'; onOpenProducts: (filter: StockFilter) => void; spaceId?: string }
+const card = 'bg-[#0f1722] border rounded-xl border-slate-700 p-3 sm:p-4 space-y-3';
+const num = (n: number) => String(Math.round(n * 100) / 100).replace('.', ',');
+
+export const StockDashboard: React.FC<Props> = ({ lang, onOpenProducts, spaceId = DEFAULT_STORAGE_ID }) => {
+  const t = (fr: string, en: string) => (lang === 'en' ? en : fr);
+  const { products, moves } = inSpace(db.getProducts(), db.getStockMoves(), spaceId); // un seul stockage à la fois : jamais mélangés
+  const today = todayMada();
+  const rows = useMemo(() => stockRows(products, moves), [products, moves]);
+  const total = stockValue(rows);
+  const empty = rows.filter(r => r.empty);
+  const low = rows.filter(r => r.low && !r.empty);
+  const soon = useMemo(() => runOutSoon(rows, moves, today), [rows, moves, today]);
+  const names = useMemo(() => new Map(products.map(p => [p.id, p])), [products]);
+  const recent = useMemo(() => [...moves].sort((a, b) => (b.date + (b.created_at || '')).localeCompare(a.date + (a.created_at || ''))).slice(0, 8), [moves]);
+  const ar = (n: number) => formatCurrencyAr(n);
+
+  if (products.length === 0) {
+    return (
+      <div className={`${card} text-center`}>
+        <div className="text-sm text-slate-300">{t('Aucun produit pour l\'instant.', 'No products yet.')}</div>
+        <button type="button" onClick={() => onOpenProducts('all')} className="min-h-[44px] px-4 rounded-lg bg-emerald-700 hover:bg-emerald-600 text-white text-sm font-semibold inline-flex items-center gap-1.5"><Plus className="w-4 h-4" />{t('Ajouter le premier produit', 'Add the first product')}</button>
+      </div>
+    );
+  }
+
+  const kpi = (label: string, value: string, tone: string, onClick?: () => void) => {
+    const inner = (<><div className="text-[11px] text-slate-400">{label}</div><div className={`text-lg font-bold ${tone}`}>{value}</div></>);
+    return onClick
+      ? <button type="button" onClick={onClick} className="text-left min-h-[44px] rounded-lg border border-slate-700 bg-slate-900/60 p-2.5">{inner}</button>
+      : <div className="rounded-lg border border-slate-700 bg-slate-900/60 p-2.5">{inner}</div>;
+  };
+  const typeLabel = (ty: string) => (ty === 'in' ? t('Entrée', 'Entry') : ty === 'out' ? t('Sortie', 'Exit') : t('Ajustement', 'Adjustment'));
+
+  return (
+    <div className="space-y-3">
+      <div className={card}>
+        <div className="grid grid-cols-2 gap-2">
+          {kpi(t('Produits', 'Products'), String(products.length), 'text-white')}
+          {kpi(t('Valeur du stock', 'Stock value'), ar(total), 'text-emerald-300')}
+          {kpi(t('Épuisés', 'Out of stock'), String(empty.length), empty.length > 0 ? 'text-rose-300' : 'text-white', empty.length > 0 ? () => onOpenProducts('empty') : undefined)}
+          {kpi(t('Stock bas', 'Low stock'), String(low.length), low.length > 0 ? 'text-amber-300' : 'text-white', low.length > 0 ? () => onOpenProducts('low') : undefined)}
+        </div>
+      </div>
+
+      <div className={card}>
+        <h3 className="text-sm font-bold text-white flex items-center gap-1.5"><AlertTriangle aria-hidden="true" className="w-4 h-4 text-amber-300" />{t('Alertes', 'Alerts')}</h3>
+        {empty.length === 0 && low.length === 0 ? <div className="text-sm text-emerald-300">{t('Tout est en ordre : aucun produit épuisé ni bas.', 'All good: nothing out of stock or low.')}</div> : (
+          <ul>
+            {[...empty, ...low].slice(0, 8).map(r => (
+              <li key={r.product.id} className="flex items-center justify-between py-1.5 border-t border-slate-800 first:border-t-0 text-sm">
+                <span className="text-white truncate pr-2">{r.product.name}</span>
+                <span className={`whitespace-nowrap ${r.empty ? 'text-rose-300' : 'text-amber-300'}`}>{r.empty ? t('épuisé', 'out') : `${num(r.qty)} ${r.product.unit}`}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+        {empty.length + low.length > 8 && <button type="button" onClick={() => onOpenProducts(empty.length ? 'empty' : 'low')} className="min-h-[44px] text-sm text-sky-300 underline">{t(`Voir les ${empty.length + low.length} produits`, `See all ${empty.length + low.length} products`)}</button>}
+      </div>
+
+      {soon.length > 0 && (
+        <div className={card}>
+          <h3 className="text-sm font-bold text-white">{t('Bientôt en rupture (30 jours)', 'Running out soon (30 days)')}</h3>
+          <ul>
+            {soon.slice(0, 6).map(x => (
+              <li key={x.product.id} className="flex items-center justify-between py-1.5 border-t border-slate-800 first:border-t-0 text-sm">
+                <span className="text-white truncate pr-2">{x.product.name}</span>
+                <span className="text-rose-300 whitespace-nowrap">{x.daysLeft === 0 ? t('vide', 'empty') : t(`~${x.daysLeft} j`, `~${x.daysLeft} d`)} · {num(x.qty)} {x.product.unit}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      <div className={card}>
+        <h3 className="text-sm font-bold text-white">{t('Derniers mouvements', 'Latest movements')}</h3>
+        {recent.length === 0 ? <div className="text-sm text-slate-400">{t('Aucun mouvement pour l\'instant.', 'No movements yet.')}</div> : (
+          <ul>
+            {recent.map(m => {
+              const p = names.get(m.product_id);
+              const sign = m.type === 'out' ? '−' : m.type === 'in' ? '+' : m.qty < 0 ? '−' : '+';
+              return (
+                <li key={m.id} className="flex items-center justify-between gap-2 py-1.5 border-t border-slate-800 first:border-t-0 text-sm">
+                  <span className="min-w-0"><span className="text-white truncate block">{p ? p.name : t('Produit supprimé', 'Deleted product')}</span><span className="text-[11px] text-slate-400">{m.date} · {typeLabel(m.type)}</span></span>
+                  <span className={`whitespace-nowrap font-semibold ${sign === '+' ? 'text-emerald-300' : 'text-rose-300'}`}>{sign}{num(Math.abs(m.qty))} {p ? p.unit : ''}</span>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </div>
+
+      <OpenGraphsButton filter="stock" lang={lang} hint={t('Les graphiques du stock (valeur dans le temps, produits les plus sortis…) sont maintenant dans la page Graphiques.', 'The stock charts (value over time, most used products…) are now in the Charts page.')} />
+    </div>
+  );
+};

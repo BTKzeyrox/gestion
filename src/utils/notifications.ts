@@ -1,0 +1,182 @@
+// Construit la liste de la cloche (à valider, refus, messages, Actualités, alertes Santé) et l'état lu ou non lu ; lit le store et le navigateur.
+// Utilisé par : ChatView.tsx, TopBar.tsx, WatchSettingsSection.tsx et useChatUnread.ts. Contrôlé par : npm run check:notif-read.
+// Pour modifier : l'état « lu » est gardé par personne sur cet appareil (400 derniers id) ; une nouvelle notification a besoin d'un id stable pour pouvoir être marquée lue.
+import { db } from '../db/store';
+import { User } from '../types';
+import { formatCurrencyAr } from './formatUtils';
+import { previewText, newsNavId } from './newsLink';
+import { getQueue, getFreePosts } from './presence';
+import type { ValFilter } from './navIntent';
+import { getHealthSoft } from './healthDb';
+import { todayMada } from './stats';
+import { planHealthNotifs } from './healthNotif';
+import { remItems, remCfg } from './remindersState';
+import { remDue, remCountdown } from './reminderRules';
+
+export interface Notif {
+  id: string;
+  title: string;
+  sub: string;
+  view: string; // page qui s'ouvre au clic
+  at: string; // date ISO (pour le tri)
+  tone: 'urgent' | 'info' | 'ok' | 'bad';
+  filter?: ValFilter; // filtre de la page Validations à activer au clic
+  nav?: string; // élément exact à atteindre (data-nav) : défilement + clignotement
+  thread?: string; // messagerie : discussion à ouvrir ('all' = groupe)
+  storage?: import('./storageNav').StorageIntent; // Stockage : le bon stockage, le bon filtre, le produit à faire clignoter
+}
+
+// Cloche de l'admin : alertes URGENTES de la Santé du site + résumé du jour (règles pures dans healthNotif.ts). Réglable sur l'appareil (par défaut : oui).
+const HEALTH_NOTIF_KEY = (uid: string) => `df_notif_health_${uid}`;
+export const healthNotifOn = (uid: string): boolean => { try { return localStorage.getItem(HEALTH_NOTIF_KEY(uid)) !== '0'; } catch { return true; } };
+export const setHealthNotif = (uid: string, on: boolean): void => { try { localStorage.setItem(HEALTH_NOTIF_KEY(uid), on ? '1' : '0'); } catch { /* stockage indisponible */ } };
+export function healthNotifications(user: User, nowMs = Date.now()): Notif[] {
+  if (user.role !== 'admin' || !healthNotifOn(user.id)) return [];
+  try { return planHealthNotifs(getHealthSoft().alerts, todayMada(), nowMs, getSeen(user)); } catch { return []; } // la cloche ne doit jamais tomber à cause de la Santé du site
+}
+
+/** Rappels manqués (filet C) : ceux des dernières 24 h, un seul par élément (le plus récent). Ils restent dans la cloche jusqu'à ce que la personne les ouvre ; elle les retrouve même si le téléphone n'avait pas de réseau à l'heure dite. */
+export function reminderNotifications(user: User, nowMs = Date.now()): Notif[] {
+  const out: Notif[] = [];
+  try {
+    const cfg = remCfg();
+    const quiet = cfg.quiet_from && cfg.quiet_to ? { from: cfg.quiet_from, to: cfg.quiet_to } : null;
+    for (const it of remItems()) {
+      if (String(it.user_id) !== String(user.id)) continue;
+      const due = remDue(it, nowMs - 24 * 3600000, nowMs, quiet).sort((a, b) => b.at - a.at)[0];
+      if (!due) continue;
+      out.push({ id: due.key, title: cfg.hide_title ? 'Rappel' : it.title, sub: remCountdown('fr', it, due.occ, due.at, due.fire.id === 'snooze'), view: 'calendar', nav: `rem-${it.id}`, at: new Date(due.at).toISOString(), tone: due.fire.k === 'overdue' || it.priority === 'urgent' ? 'urgent' : 'info' });
+    }
+  } catch { /* la cloche ne doit jamais tomber à cause des rappels */ }
+  return out;
+}
+
+// « 2026-10-06 12:00:00 » : on met un T pour que Safari (iPhone) le lise aussi
+const ts = (s?: string) => (s ? new Date(s.replace(' ', 'T')).getTime() || 0 : 0);
+
+// Actualités : même liste que les push « Actualités » (jamais d'argent, tout lu dans le store déjà filtré par le serveur selon « Visible par »).
+// Nouvelle publication des autres (7 jours) ; à valider (responsable) ; ma publication validée ou refusée (14 jours) ; commentaire sur ma publication et réponse à mon commentaire (7 jours).
+const NEWS_DAYS = 7, NEWS_DECISION_DAYS = 14;
+const NEWS_PREFIX = 'news-'; // id des « nouvelle publication » : seules celles-ci passent en « lues » quand on ouvre les Actualités
+export function newsNotifications(user: User, nowMs = Date.now()): Notif[] {
+  const out: Notif[] = [];
+  try {
+    const origin = typeof window !== 'undefined' && window.location ? window.location.origin : '';
+    const since = nowMs - NEWS_DAYS * 24 * 3600000, sinceDecision = nowMs - NEWS_DECISION_DAYS * 24 * 3600000;
+    const label = (p: { title?: string; text?: string }) => ((p.title || '').trim() || previewText(p.text || '', origin)).slice(0, 80);
+    const admin = user.role === 'admin';
+    for (const p of db.getNews()) {
+      const status = p.status || 'published';
+      const mine = p.author_id === user.id;
+      const nav = newsNavId(p.id);
+      if (status === 'pending') {
+        if (admin && !mine) out.push({ id: `newsp-${p.id}-${p.submitted_at || p.created_at}`, title: `${p.author_name} · publication à valider`, sub: label(p), view: 'feed', nav, at: p.submitted_at || p.created_at, tone: 'urgent' });
+        continue;
+      }
+      if (status === 'rejected') {
+        if (mine && !admin && ts(p.submitted_at || p.created_at) > sinceDecision) out.push({ id: `newsr-${p.id}-${p.submitted_at || p.created_at}`, title: 'Publication refusée', sub: p.reject_reason ? `Motif : ${p.reject_reason}`.slice(0, 100) : label(p), view: 'feed', nav, at: p.submitted_at || p.created_at, tone: 'bad' });
+        continue;
+      }
+      // publiée
+      if (!mine && ts(p.created_at) > since) out.push({ id: `${NEWS_PREFIX}${p.id}-${p.created_at}`, title: `${p.author_name} · nouvelle publication`, sub: label(p), view: 'feed', nav, at: p.created_at, tone: 'info' });
+      // validée par le responsable : la validation remet la date de la publication à « maintenant » (created_at devient différent de submitted_at)
+      if (mine && !admin && p.submitted_at && p.created_at !== p.submitted_at && ts(p.created_at) > sinceDecision) out.push({ id: `newsok-${p.id}-${p.created_at}`, title: 'Publication validée', sub: label(p), view: 'feed', nav, at: p.created_at, tone: 'ok' });
+      for (const c of p.comments || []) {
+        if (c.user_id === user.id || ts(c.created_at) <= since) continue;
+        const parent = c.parent_id ? (p.comments || []).find(x => x.id === c.parent_id) : undefined;
+        if (parent && parent.user_id === user.id) out.push({ id: `newsrp-${c.id}`, title: `${c.user_name} a répondu à ton commentaire`, sub: label(p), view: 'feed', nav, at: c.created_at, tone: 'info' });
+        else if (mine) out.push({ id: `newsc-${c.id}`, title: `${c.user_name} a commenté ta publication`, sub: label(p), view: 'feed', nav, at: c.created_at, tone: 'info' });
+      }
+    }
+  } catch { /* la cloche ne doit jamais tomber à cause des Actualités */ }
+  return out.sort((a, b) => ts(b.at) - ts(a.at)).slice(0, 40);
+}
+
+// Admin : tout ce qui attend une décision. Opérateur : réponses de l'admin (refus, avances).
+export const buildNotifications = (user: User): Notif[] => {
+  const out: Notif[] = [];
+  if (user.role === 'admin') {
+    db.getPosts().forEach(p => {
+      if (p.status === 'pending_start' || p.status === 'pending_end')
+        out.push({ id: `post-${p.id}-${p.status}`, title: `${p.employee_name} · ${p.client_name}`, sub: p.status === 'pending_start' ? 'Début à valider' : 'Fin à valider', view: 'validations', filter: p.status === 'pending_start' ? 'starts' : 'ends', nav: `val-post-${p.id}`, at: p.updated_at || p.date, tone: 'info' });
+    });
+    db.getAdvanceRequests().filter(a => a.status === 'pending').forEach(a =>
+      out.push({ id: `adv-${a.id}`, title: `${a.employee_name} · avance ${formatCurrencyAr(a.amount_ar)}`, sub: 'Avance à valider', view: 'validations', filter: 'advances', nav: `val-adv-${a.id}`, at: a.request_date, tone: 'info' }));
+    db.getSignupRequests().forEach(r =>
+      out.push({ id: `sig-${r.id}`, title: r.name, sub: 'Inscription à valider', view: 'validations', filter: 'signups', nav: `val-sig-${r.id}`, at: r.created_at, tone: 'info' }));
+    db.getPasswordResets().forEach(r =>
+      out.push({ id: `rst-${r.id}`, title: r.name, sub: 'Mot de passe oublié (urgent)', view: 'validations', filter: 'resets', nav: `val-rst-${r.id}`, at: r.created_at, tone: 'urgent' }));
+    db.getProfileRequests().filter(r => r.status === 'pending').forEach(r =>
+      out.push({ id: `prf-${r.id}`, title: r.old.name, sub: 'Changement de profil à valider', view: 'validations', filter: 'profiles', nav: `val-prf-${r.id}`, at: r.created_at, tone: 'info' }));
+    // Opérateurs sans mission : 1re puis 2e alerte (minutes réglables dans Réglages)
+    const cfg = db.getSettings();
+    const a1 = Math.max(1, Math.round(cfg.alert_idle_1_min || 15));
+    const a2 = Math.max(a1 + 1, Math.round(cfg.alert_idle_2_min || 30));
+    getQueue(db.getUsers(), db.getPosts(), db.getPresence()).forEach(w => {
+      const lvl = w.minutes >= a2 ? a2 : w.minutes >= a1 ? a1 : 0;
+      if (lvl) out.push({ id: `wait-${w.user.id}-${lvl}-${w.waitingSince}`, title: w.user.name, sub: `Sans mission depuis ${lvl} min`, view: 'active-post', at: w.waitingSince as string, tone: lvl === a2 ? 'urgent' : 'info' });
+    });
+    db.getSecurityLogs().filter(l => !l.resolved).forEach(l =>
+      out.push({ id: `sec-${l.id}`, title: l.employee_name, sub: 'Alerte de sécurité', view: 'security', nav: `sec-${l.id}`, at: l.timestamp, tone: 'urgent' }));
+  } else {
+    // Premier de la file et une mission vient de se libérer
+    const q = db.getMyQueue();
+    const free = q && q.position === 1 ? getFreePosts(db.getContracts(), db.getPosts()) : [];
+    if (q && free.length > 0)
+      out.push({ id: `free-${q.waiting_since}-${free[0].id}`, title: 'Une mission est libre', sub: `${free[0].client_name} (mission ${free[0].post_number}) : à toi en premier`, view: 'grid', nav: `mission-${free[0].post_number}`, at: new Date().toISOString(), tone: 'ok' });
+    db.getPosts().filter(p => p.employee_id === user.id && p.status === 'rejected').forEach(p =>
+      out.push({ id: `rej-${p.id}-${p.updated_at}`, title: `${p.client_name} refusé`, sub: p.rejection_reason ? `Motif : ${p.rejection_reason}` : 'Soumission refusée', view: 'active-post', at: p.updated_at || p.date, tone: 'bad' }));
+    db.getAdvanceRequests().filter(a => a.employee_id === user.id && a.status !== 'pending').forEach(a =>
+      out.push({ id: `advr-${a.id}-${a.status}`, title: `Avance ${formatCurrencyAr(a.amount_ar)} ${a.status === 'approved' ? 'acceptée' : 'refusée'}`, sub: a.admin_notes ? `Motif : ${a.admin_notes}` : '', view: 'advances', nav: `adv-${a.id}`, at: a.request_date, tone: a.status === 'approved' ? 'ok' : 'bad' }));
+  }
+  if (user.role === 'admin') out.push(...healthNotifications(user));
+  out.push(...reminderNotifications(user));
+  out.push(...newsNotifications(user));
+  // Messagerie : messages reçus (privés ou groupe) des 3 derniers jours, pas encore lus
+  const seen = getSeen(user);
+  const since = Date.now() - 3 * 24 * 3600 * 1000;
+  db.getMessages()
+    .filter(m => m.sender_id !== user.id && ts(m.timestamp) > since && ((m.recipient_id || 'all') === 'all' || m.recipient_id === user.id))
+    .filter(m => !seen.includes(`msg-${m.id}`))
+    .slice(-20)
+    .forEach(m => {
+      const group = (m.recipient_id || 'all') === 'all';
+      out.push({ id: `msg-${m.id}`, title: group ? `${m.sender_name} · groupe` : m.sender_name, sub: m.message ? previewText(m.message, (typeof window !== 'undefined' && window.location ? window.location.origin : '')).slice(0, 80) : 'Pièce jointe', view: 'chat', thread: group ? 'all' : m.sender_id, at: m.timestamp, tone: 'info' });
+    });
+  return out.sort((a, b) => ts(b.at) - ts(a.at));
+};
+
+// Ouvrir les Actualités = les « nouvelle publication » sont lues (les commentaires, réponses, validations et refus restent à lire jusqu'au clic : les commentaires sont repliés)
+export const markNewsSeen = (user: User): void => {
+  const ids = newsNotifications(user).filter(n => n.id.startsWith(NEWS_PREFIX)).map(n => n.id);
+  if (ids.length === 0) return;
+  const seen = getSeen(user);
+  if (ids.every(id => seen.includes(id))) return;
+  markSeen(user, ids);
+  window.dispatchEvent(new Event(SEEN_EVENT));
+};
+
+// Ouvrir la messagerie = messages lus
+export const SEEN_EVENT = 'df-seen';
+export const markChatSeen = (user: User) => {
+  const ids = db.getMessages().map(m => `msg-${m.id}`);
+  if (ids.length === 0) return;
+  const seen = getSeen(user);
+  if (ids.every(id => seen.includes(id))) return;
+  markSeen(user, ids);
+  window.dispatchEvent(new Event(SEEN_EVENT));
+};
+
+// « Vu » : gardé par utilisateur dans ce navigateur (le opérateur voit un compteur seulement pour du nouveau)
+const key = (u: User) => `df_notif_seen_${u.id}`;
+export const getSeen = (u: User): string[] => {
+  try { return JSON.parse(localStorage.getItem(key(u)) || '[]'); } catch { return []; }
+};
+export const markSeen = (u: User, ids: string[]) => {
+  try { localStorage.setItem(key(u), JSON.stringify(Array.from(new Set([...getSeen(u), ...ids])).slice(-400))); } catch { /* stockage indisponible */ }
+};
+/** Compteur de la cloche : seulement les notifications PAS ENCORE LUES (pour tous les rôles). Lu = gardé sur cet appareil, par personne. */
+export const unreadCount = (u: User, list: Notif[]): number => { const seen = getSeen(u); return list.filter(n => !seen.includes(n.id)).length; };
+/** Marque toutes les notifications de la liste comme lues (bouton « Tout marquer comme lu »). */
+export const markAllRead = (u: User, list: Notif[]): void => markSeen(u, list.map(n => n.id));
+export const isUnread = (u: User, n: Notif): boolean => !getSeen(u).includes(n.id);

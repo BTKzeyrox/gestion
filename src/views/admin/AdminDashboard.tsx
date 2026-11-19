@@ -1,0 +1,2002 @@
+// Écran principal du responsable : tableau de bord, validations de missions, alertes de sécurité et liste des sessions, selon l'onglet demandé.
+// Utilisé par : App.tsx et prefetch.ts.
+// Pour modifier : l'écran affiché dépend de activeSubTab (dashboard, grid, sessions, security, validations). Données lues dans db (users, posts, securityLogs, advances). Fichier très long : chercher la zone par ses commentaires SECTION ou par isValidations, isSecurity, isSessions.
+import { isWorkLine, postPayAr } from '../../utils/postPay';
+import { workLineDetail, workLineBy } from '../../utils/workLineText';
+import { HealthSummary } from '../../components/HealthSummary';
+import { showToast } from '../../components/ToastHost';
+import React, { useState, useEffect } from 'react';
+import {
+  ShieldAlert,
+  Trash2,
+  Shield,
+  Camera,
+  CheckCircle2,
+  XCircle,
+  Unlock,
+  Ban,
+  Eye,
+  Radio,
+  Clock,
+  TrendingUp,
+  DollarSign,
+  AlertTriangle,
+  UserX,
+  UserCheck,
+  Send,
+  Zap,
+  Filter,
+  Check,
+  MessageSquare,
+  Layers,
+  Target,
+  Info,
+  Hourglass,
+  CircleDot,
+  X,
+  KeyRound,
+  UserPlus,
+} from 'lucide-react';
+import { User, PostSession, SecurityViolation, ClientContract, ShiftType, PasswordResetRequest, AccessRequest, ProfileChangeRequest, SignupRequest } from '../../types';
+import { Avatar } from '../../components/Avatar';
+import { db } from '../../db/store';
+import { ClientPicker } from '../../components/ClientPicker';
+import { DeadlineFields } from '../../components/DeadlineFields';
+import type { MissionPriority } from '../../utils/deadlines';
+import { templateFromMission } from '../../utils/missionTemplates';
+import { TaskListEditor } from '../../components/TaskChecklist';
+import { tasksFromLines } from '../../utils/taskList';
+import { checkMissionClient, MISSION_CLIENT_MESSAGE, missionRequiresClient } from '../../utils/clients';
+import { readCompany } from '../../utils/companyRules';
+import { proofsOf } from '../../utils/proofs';
+import { askConfirm } from '../../components/ConfirmModal';
+import { askReason } from '../../components/ReasonModal';
+import { AccessRequestsCard } from '../../components/AccessRequestsCard';
+import { countPending } from '../../utils/pendingCount';
+import { getQueue } from '../../utils/presence';
+import { liveStatus, liveText, LIVE_META } from '../../utils/presenceStatus';
+import { isTracked } from '../../utils/attendanceView';
+import { useNow } from '../../utils/useNow';
+import { groupPendingSheets, decideSheet } from '../../utils/sheetBatch';
+import { countOnline, countOnlineStaff } from '../../utils/presenceCount';
+import { PostsGrid20 } from '../../components/PostsGrid20';
+import { formatScoreM, formatCurrencyAr, plural } from '../../utils/formatUtils';
+import { takeValFilterIntent, VAL_INTENT_EVENT } from '../../utils/navIntent';
+import { generateProofPlaceholder, compressProofImage } from '../../utils/imageUtils';
+import { useLockBodyScroll } from '../../utils/useLockBodyScroll';
+import { ScoreInput } from '../../components/ScoreInput';
+import { AdminChecklist } from '../../components/MissionGuide';
+import { clientPriceForType, parsePriceInput } from '../../utils/clientPrice';
+import { AlertsList, GoalsBars } from '../../components/GoalsPanel';
+import { PendingMark } from '../../components/PendingMark';
+import { setStatsTab } from '../../utils/statsNav';
+import { setStorageIntent } from '../../utils/storageNav';
+import { setNavTarget } from '../../utils/navTarget';
+import { WorksheetShortcut } from '../../components/WorksheetShortcut';
+import { setValFilterIntent } from '../../utils/navIntent';
+import { FilterBar } from '../../components/FilterBar';
+import { useApp } from '../../context/AppContext';
+import { showShift } from '../../utils/shiftMode';
+
+// Ordre d'affichage dans la carte « Équipe connectée » : opérateurs, puis chefs d'équipe, puis comptables
+const ROLE_RANK: Record<string, number> = { employee: 0, team_lead: 1, accountant: 2 };
+
+interface AdminDashboardProps {
+  currentUser?: User;
+  onOpenProofLightbox: (params: {
+    imageUrl: string;
+    gallery?: string[];
+    title: string;
+    subtitle?: string;
+    score?: number;
+    clientTag?: string;
+    operatorName?: string;
+    timestamp?: string;
+  }) => void;
+  onOpenEmployeeCV?: (employee: User) => void;
+  onNavigateToEmployees?: () => void;
+  onNavigateToCalendar?: () => void;
+  activeSubTab?: 'grid' | 'dashboard' | 'sessions' | 'security' | 'advances' | 'chat' | 'validations';
+  onNavigateTab?: (tab: string) => void;
+}
+
+export const AdminDashboard: React.FC<AdminDashboardProps> = ({
+  currentUser,
+  onOpenProofLightbox,
+  onOpenEmployeeCV,
+  onNavigateToEmployees,
+  onNavigateToCalendar,
+  activeSubTab = 'dashboard',
+  onNavigateTab,
+}) => {
+  const { lang: appLang } = useApp();
+  const [users, setUsers] = useState<User[]>(db.getUsers());
+  const [posts, setPosts] = useState<PostSession[]>(db.getPosts());
+  const [securityLogs, setSecurityLogs] = useState<SecurityViolation[]>(db.getSecurityLogs());
+  const [resets, setResets] = useState<PasswordResetRequest[]>(db.getPasswordResets());
+  const [accessReqs, setAccessReqs] = useState<AccessRequest[]>(db.getAccessRequests());
+  const [signups, setSignups] = useState<SignupRequest[]>(db.getSignupRequests());
+  const [profileReqs, setProfileReqs] = useState<ProfileChangeRequest[]>(db.getProfileRequests().filter(x => x.status === 'pending'));
+  const [profileErr, setProfileErr] = useState<string | null>(null);
+  const [advances, setAdvances] = useState(db.getAdvanceRequests());
+  const [valFilter, setValFilter] = useState<'all' | 'starts' | 'ends' | 'advances' | 'signups' | 'resets' | 'access' | 'profiles'>('all');
+  // Statut de l'équipe en direct : rechargement rapide (8 s) tant que cet écran est ouvert, et tout de suite à l'ouverture (première connexion vue sans attendre)
+  useEffect(() => { db.setFastPoll(true); return () => db.setFastPoll(false); }, []);
+  useNow(15000); // la carte « Équipe connectée » se recalcule toute seule (En ligne → Hors ligne) même sans nouvelle donnée
+  // Clic sur une notification : ouvre Validations avec le bon filtre
+  useEffect(() => {
+    const apply = () => {
+      const f = takeValFilterIntent();
+      if (f) setValFilter(f);
+    };
+    apply();
+    window.addEventListener(VAL_INTENT_EVENT, apply);
+    return () => window.removeEventListener(VAL_INTENT_EVENT, apply);
+  }, []);
+
+  // Rejection modal state
+  const [rejectingPostId, setRejectingPostId] = useState<string | null>(null);
+  const [rejectReason, setRejectReason] = useState('');
+
+  // Force release modal state
+  const [forceReleasePostId, setForceReleasePostId] = useState<string | null>(null);
+  const [forceReleaseReason, setForceReleaseReason] = useState('Déblocage d\'urgence par le superviseur');
+
+  // Filter for submissions
+  const [submissionFilter, setSubmissionFilter] = useState<'all' | 'pending_start' | 'pending_end'>('all');
+
+  // Admin Comprehensive Post Modal State (view, manage, validate, edit all fields)
+  const [selectedAdminContract, setSelectedAdminContract] = useState<ClientContract | null>(null);
+  const [activeSessionForModal, setActiveSessionForModal] = useState<PostSession | null>(null);
+  const [assignedOperatorId, setAssignedOperatorId] = useState<string>('');
+  const [assignSuccessMsg, setAssignSuccessMsg] = useState<string | null>(null);
+  const [assignErrorMsg, setAssignErrorMsg] = useState<string | null>(null);
+
+  // Full editable fields by Admin for any post
+  const [editClientName, setEditClientName] = useState('');
+  const [editClientId, setEditClientId] = useState(''); // fiche client de la mission (module 1)
+  const [editClientError, setEditClientError] = useState<string | null>(null);
+  const [editAccountTag, setEditAccountTag] = useState('');
+  const [editInitialScore, setEditInitialScore] = useState<number>(0);
+  // Champs liés : Cible = Début + Objectif ; Reste = Cible − Actuel
+  const [editTargetScore, setEditTargetScore] = useState<number>(0);
+  const [editCurrentScore, setEditCurrentScore] = useState<number>(0);
+  const editObjective = Math.max(0, editTargetScore - editInitialScore);
+  const editReste = Math.max(0, editTargetScore - editCurrentScore);
+  const [editAccountProofs, setEditAccountProofs] = useState<string[]>([]); // preuves du compte client (5 max)
+  const [accountProofBusy, setAccountProofBusy] = useState(false);
+  // Début modifié : la Cible suit (l'Objectif reste le même), l'Actuel ne peut pas passer sous le Début
+  const changeInitial = (n: number) => {
+    setEditTargetScore(t => t + (n - editInitialScore));
+    setEditCurrentScore(c => (c < n ? n : c));
+    setEditInitialScore(n);
+  };
+  const changeObjective = (n: number) => setEditTargetScore(editInitialScore + n);
+  const changeReste = (n: number) => setEditCurrentScore(editTargetScore - n);
+  const handleAddAccountProofs = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    e.target.value = '';
+    const slots = 5 - editAccountProofs.length;
+    if (files.length === 0) return;
+    if (slots <= 0) {
+      setAssignErrorMsg('Maximum 5 photos de justificatif du compte client.');
+      return;
+    }
+    setAccountProofBusy(true);
+    try {
+      for (const f of files.slice(0, slots)) {
+        const small = await compressProofImage(f);
+        const url = (await db.uploadFile(small)) || small;
+        setEditAccountProofs(prev => (prev.length >= 5 ? prev : [...prev, url]));
+      }
+    } catch {
+      setAssignErrorMsg("Une photo n'a pas pu être envoyée. Réessayez.");
+    } finally {
+      setAccountProofBusy(false);
+    }
+  };
+  const [editGameMode, setEditGameMode] = useState('');
+  const [editShift, setEditShift] = useState<ShiftType | 'any'>('any');
+  const [editNotes, setEditNotes] = useState('');
+  const [editDescription, setEditDescription] = useState('');
+  const [editProofMode, setEditProofMode] = useState<'type' | 'none' | 'photo' | 'note' | 'both'>('type');
+  const [editPrice, setEditPrice] = useState('');
+  const [editTasks, setEditTasks] = useState<{ text: string; required: boolean }>({ text: '', required: false });
+  const [tplName, setTplName] = useState('');
+  const [tplMsg, setTplMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [editDue, setEditDue] = useState<{ date: string; time: string; priority: MissionPriority }>({ date: '', time: '', priority: 'Normale' });
+
+  // In-app Toast Notice (no window.alert in iframe)
+  const [toastNotice, setToastNotice] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
+  useEffect(() => { if (toastNotice) { showToast(toastNotice.message, toastNotice.type); setToastNotice(null); } }, [toastNotice]);
+
+  // Prevent background scroll when modals are active
+  useLockBodyScroll(!!selectedAdminContract || !!rejectingPostId || !!forceReleasePostId);
+
+  const showToast = (message: string, type: 'success' | 'error' | 'info' = 'info') => {
+    setToastNotice({ message, type });
+    setTimeout(() => {
+      setToastNotice(null);
+    }, 4000);
+  };
+
+  useEffect(() => {
+    const unsubscribe = db.subscribe(() => {
+      setUsers(db.getUsers());
+      setPosts(db.getPosts());
+      setSecurityLogs(db.getSecurityLogs());
+      setResets(db.getPasswordResets());
+      setAccessReqs(db.getAccessRequests());
+      setSignups(db.getSignupRequests());
+      setProfileReqs(db.getProfileRequests().filter(x => x.status === 'pending'));
+      setAdvances(db.getAdvanceRequests());
+    });
+    return unsubscribe;
+  }, []);
+
+  // Handlers for post actions
+  // Une décision à la fois par mission : un deuxième clic pendant l'envoi est ignoré (sinon la fenêtre revenait en boucle)
+  const decidingRef = React.useRef<Set<string>>(new Set());
+  const handleValidate = async (postId: string, confirmed = false, note = '') => {
+    if (!confirmed) {
+      askReason({
+        title: 'Valider cette session ?',
+        message: "La mission sera validée. Cette action ne peut pas être annulée.",
+        confirmLabel: 'Valider',
+        optional: true,
+        onSubmit: note => handleValidate(postId, true, note),
+      });
+      return;
+    }
+    if (decidingRef.current.has(postId)) return;
+    decidingRef.current.add(postId);
+    // La décision est prise par le SERVEUR (paie et prix client calculés là-bas) : plus de validation « perdue ».
+    // Mais l'écran n'attend pas : la mission change d'état tout de suite, et si le serveur refuse (ou si le réseau tombe), elle revient comme avant avec un message.
+    const now = db.decidePostNow(postId, true, undefined, note);
+    if (!now.ok) { decidingRef.current.delete(postId); showToast(now.error || 'Erreur lors de la validation', 'error'); return; }
+    showToast('Mission validée avec succès !', 'success');
+    let closeTimer: ReturnType<typeof setTimeout> | null = null;
+    // If modal was open for this post, refresh or close
+    if (activeSessionForModal && activeSessionForModal.id === postId) {
+      setAssignSuccessMsg('Session validée avec succès !');
+      closeTimer = setTimeout(() => setSelectedAdminContract(null), 1200);
+    }
+    const res = await now.settled;
+    decidingRef.current.delete(postId);
+    if (!res.ok) {
+      if (closeTimer) { clearTimeout(closeTimer); setAssignSuccessMsg(null); }
+      showToast(`La validation n'a pas été enregistrée : ${res.error || 'erreur'}. La mission est revenue en attente.`, 'error');
+    }
+  };
+
+  // Admin Saves All Modifications to a Post / Contract
+  const handleSaveAdminModifications = () => {
+    if (!selectedAdminContract) return;
+
+    if (!editClientName.trim()) {
+      setAssignErrorMsg('Le titre de la mission ne peut pas être vide.');
+      return;
+    }
+    // Client : « Une mission a toujours un client » empêche d'ENLEVER un client déjà choisi ; une ancienne mission sans client reste modifiable (on la rattache dans la page Clients)
+    setEditClientError(null);
+    const hadClient = !!selectedAdminContract.client_id;
+    const cv = checkMissionClient({ required: missionRequiresClient(readCompany(db.getSettings().company)) && hadClient, clientId: editClientId, clients: db.getClients(), current: selectedAdminContract.client_id || null });
+    if (!cv.ok) {
+      const msg = MISSION_CLIENT_MESSAGE[cv.error][appLang === 'en' ? 'en' : 'fr'];
+      setEditClientError(msg);
+      setAssignErrorMsg(msg);
+      return;
+    }
+    if (editTargetScore <= editInitialScore) {
+      setAssignErrorMsg('La cible doit être supérieure au départ.');
+      return;
+    }
+    if (editCurrentScore < editInitialScore) {
+      setAssignErrorMsg('L\'actuel ne peut pas être inférieur au départ.');
+      return;
+    }
+    if (editCurrentScore > editTargetScore) {
+      setAssignErrorMsg('La quantité à faire ne peut pas être négative : le fait dépasse la cible.');
+      return;
+    }
+
+    const priceParsed = parsePriceInput(editPrice);
+    if (priceParsed === null) {
+      setAssignErrorMsg('Le prix client doit être un nombre positif ou vide.');
+      return;
+    }
+
+    // 1. Update Contract
+    const contractRes = db.updateContract(selectedAdminContract.id, {
+      client_name: editClientName.trim(),
+      account_tag: editAccountTag.trim(),
+      initial_score: editInitialScore,
+      target_score: editTargetScore,
+      current_score: editCurrentScore,
+      account_proof_urls: editAccountProofs,
+      game_mode: editGameMode.trim(),
+      description: editDescription.trim(),
+      proof_mode: editProofMode,
+      client_price_ar: priceParsed, // vide = retour au prix du type / prix par défaut
+      due_date: editDue.date, due_time: editDue.time, priority: editDue.priority, // date limite et priorité (M6.1) ; vide = retirée
+      tasks: tasksFromLines(editTasks.text, selectedAdminContract.tasks || []), tasks_required: editTasks.required, // liste de tâches (M6.3) ; mêmes lignes = mêmes cases cochées
+      no_account: false,
+      recommended_shift: editShift,
+    });
+
+    // 1b. Client de la mission (l'histoire reste figée : les anciennes sessions gardent l'ancien client)
+    if (contractRes.success && (cv.client_id || null) !== (selectedAdminContract.client_id || null)) {
+      const link = db.setContractClient(selectedAdminContract.id, cv.client_id);
+      if (!link.success) { setAssignErrorMsg(link.error || 'Le client n\'a pas pu être enregistré.'); return; }
+    }
+
+    // 2. If an active or pending session exists, update it too
+    if (activeSessionForModal) {
+      db.updatePostAdmin(activeSessionForModal.id, {
+        client_name: editClientName.trim(),
+        account_tag: editAccountTag.trim(),
+        target_score: editTargetScore,
+        current_score: editCurrentScore,
+        employee_id: assignedOperatorId,
+        shift_type: editShift === 'night' ? 'night' : 'day',
+        notes: editNotes.trim(),
+      });
+    }
+
+    if (contractRes.success) {
+      setAssignSuccessMsg('Toutes les modifications de la mission ont été enregistrées avec succès !');
+      showToast('Mission mise à jour avec succès !', 'success');
+      setTimeout(() => setAssignSuccessMsg(null), 3000);
+    } else {
+      setAssignErrorMsg(contractRes.error || 'Erreur lors de l\'enregistrement des modifications.');
+    }
+  };
+
+  const handleOpenReject = (postId: string) => {
+    setRejectingPostId(postId);
+    setRejectReason('Photo illisible / Incohérence constatée');
+  };
+
+  const handleConfirmReject = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!rejectingPostId) return;
+    if (!rejectReason.trim()) {
+      showToast('Un motif de rejet est obligatoire.', 'error');
+      return;
+    }
+    const id = rejectingPostId;
+    if (decidingRef.current.has(id)) return;
+    decidingRef.current.add(id);
+    // Même principe que la validation : affichage immédiat, vrai résultat du serveur ensuite (retour en arrière + message si refusé)
+    const now = db.decidePostNow(id, false, rejectReason);
+    if (!now.ok) { decidingRef.current.delete(id); showToast(now.error || 'Erreur de rejet', 'error'); setRejectingPostId(null); return; }
+    showToast('Soumission rejetée avec notification à l\'opérateur.', 'info');
+    setRejectingPostId(null);
+    const res = await now.settled;
+    decidingRef.current.delete(id);
+    if (!res.ok) showToast(`Le rejet n'a pas été enregistré : ${res.error || 'erreur'}. La mission est revenue en attente.`, 'error');
+  };
+
+  const handleOpenForceRelease = (postId: string) => {
+    setForceReleasePostId(postId);
+  };
+
+  const handleConfirmForceRelease = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!forceReleasePostId) return;
+    const res = db.forceReleasePost(forceReleasePostId, forceReleaseReason);
+    if (!res.success) {
+      showToast(res.error || 'Erreur de déblocage', 'error');
+    } else {
+      showToast('Mission débloquée et réinitialisé avec succès.', 'success');
+    }
+    setForceReleasePostId(null);
+  };
+
+  // Toggle user block status
+  const handleToggleBlock = (userId: string) => {
+    db.toggleUserBlock(userId);
+  };
+
+  // Dismiss violation
+  const handleDismissViolation = (logId: string) => {
+    db.dismissViolation(logId);
+  };
+
+  // Computations
+  const presence = db.getPresence();
+  const staffCount = countOnlineStaff(users, presence);
+  const onlineCount = countOnline(users, presence); // en ligne = signe de vie récent (une mission ouverte seule ne compte pas), comptes actifs seulement
+  const waitingQueue = getQueue(users, posts, presence);
+  const pendingSubmissions = posts.filter(
+    p => p.status === 'pending_start' || p.status === 'pending_end'
+  );
+  const isValidations = activeSubTab === 'validations';
+  // Feuilles saisies par un chef d'équipe, en attente : « Tout valider » (M27.5). Montant = estimation (le serveur calcule la paie à la validation, comme pour une ligne seule).
+  const pendingSheets = groupPendingSheets(pendingSubmissions, currentUser, p => postPayAr(p, users.find(u => u.id === p.employee_id), db.getSettings()));
+  const [batchConfirm, setBatchConfirm] = useState<string | null>(null);
+  const [batchBusy, setBatchBusy] = useState<string | null>(null);
+  const validateSheet = async (s: { key: string; ids: string[]; count: number }) => {
+    if (batchBusy) return;
+    setBatchBusy(s.key);
+    const res = await decideSheet(s.ids, async id => {
+      if (decidingRef.current.has(id)) return { ok: false, error: 'déjà en cours' };
+      decidingRef.current.add(id);
+      const now = db.decidePostNow(id, true);
+      if (!now.ok) { decidingRef.current.delete(id); return { ok: false, error: now.error || 'Erreur' }; }
+      const r = await now.settled;
+      decidingRef.current.delete(id);
+      return r;
+    });
+    setBatchBusy(null); setBatchConfirm(null);
+    if (res.failed.length === 0) showToast(`${res.done} lignes validées.`, 'success');
+    else showToast(`${res.done} validées, ${res.failed.length} non validées : ${res.failed[0].error}`, 'error');
+  };
+  const isSecurity = activeSubTab === 'security';
+  const isSessions = activeSubTab === 'sessions';
+  const pend = countPending();
+  const pendingAdvances = advances.filter(a => a.status === 'pending');
+  const showSubs = valFilter === 'all' || valFilter === 'starts' || valFilter === 'ends';
+  const filteredSubmissions = pendingSubmissions.filter(p => {
+    if (isValidations) {
+      if (valFilter === 'starts') return p.status === 'pending_start';
+      if (valFilter === 'ends') return p.status === 'pending_end';
+      return true;
+    }
+    if (submissionFilter === 'all') return true;
+    return p.status === submissionFilter;
+  });
+
+  const activeViolations = securityLogs.filter(l => !l.resolved);
+
+  const totalScoreBoosted = users.reduce((acc, u) => acc + (u.total_score_boosted || 0), 0);
+
+  const homeParts = (() => {
+    const today = new Date().toISOString().split('T')[0];
+    const doneToday = posts.filter(p => p.status === 'completed' && p.date === today && !isWorkLine(p)); // les lignes de la Feuille du jour ne sont pas des missions
+    const scoreToday = doneToday.reduce(
+      (acc, p) => acc + Math.max(0, (p.final_score ?? p.current_score ?? 0) - (p.initial_score || 0)),
+      0
+    );
+    const running = posts.filter(p => p.status === 'active');
+    const waiting = pendingSubmissions.slice(0, 5);
+        const tile = (label: string, value: React.ReactNode, hint: string, Icon: React.ElementType, tone: string, onClick?: () => void) => (
+      <button type="button" onClick={onClick} className="text-left bg-[#0f1722] border border-slate-800 hover:border-blue-500/60 rounded-2xl p-4 transition-colors cursor-pointer w-full">
+        <div className={`w-9 h-9 rounded-xl flex items-center justify-center mb-3 ${tone}`}>
+          <Icon className="w-5 h-5" />
+        </div>
+        <div className="text-3xl font-extrabold text-white leading-none">{value}</div>
+        <div className="text-sm font-semibold text-slate-300 mt-2">{label}</div>
+        <div className="text-xs text-slate-500 mt-0.5">{hint}</div>
+      </button>
+    );
+    const panel = 'bg-[#0f1722] border border-slate-800 rounded-2xl p-4';
+    const top = (
+      <div className="space-y-4">
+        <div>
+          <h2 className="text-xl font-extrabold text-white">Tableau de bord</h2>
+          <p className="text-sm text-slate-400">{new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })}</p>
+        </div>
+
+        <WorksheetShortcut />
+
+        {/* Alertes (seulement s'il y en a) et objectifs du mois (seulement s'il y en a de réglés) : responsable seulement */}
+        <AlertsList lang={appLang === 'en' ? 'en' : 'fr'} hideWhenEmpty onGo={a => { if (a.tab) setStatsTab(a.tab); if (a.storage) setStorageIntent(a.storage); if (a.filter) setValFilterIntent(a.filter); if (a.nav) setNavTarget(a.nav); onNavigateTab?.(a.go); }} />
+        <GoalsBars lang={appLang === 'en' ? 'en' : 'fr'} hideWhenEmpty />
+
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          {tile('Opérateurs en ligne', <>{onlineCount.online}<span className="text-base font-medium text-slate-400"> / {onlineCount.total}</span></>, (staffCount.total > 0 ? `Chefs et comptables : ${staffCount.online} / ${staffCount.total} en ligne` : 'Voir les opérateurs'), Radio, 'bg-blue-100 text-blue-700', () => onNavigateToEmployees && onNavigateToEmployees())}
+          {tile('À valider', pend.total, `${plural(pend.starts, 'départ')} · ${plural(pend.ends, 'fin')}`, Clock, pend.total > 0 ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-600', () => onNavigateTab && onNavigateTab('validations'))}
+          {tile('Missions terminées', doneToday.length, "Aujourd'hui", CheckCircle2, 'bg-emerald-100 text-emerald-700', () => onNavigateToCalendar && onNavigateToCalendar())}
+          {tile('Quantité du jour', formatScoreM(scoreToday), 'Total produit', TrendingUp, 'bg-indigo-100 text-indigo-700', () => onNavigateToCalendar && onNavigateToCalendar())}
+        </div>
+
+        <HealthSummary lang={appLang === 'en' ? 'en' : 'fr'} onOpen={() => onNavigateTab && onNavigateTab('health')} />
+      </div>
+    );
+    const panels = (
+      <div className="space-y-3">
+        <h2 className="text-xl font-extrabold text-white">Tableau des missions</h2>
+        <div className="grid lg:grid-cols-2 gap-3">
+          <section className={panel}>
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="font-bold text-white">À valider</h3>
+              <button type="button" onClick={() => onNavigateTab && onNavigateTab('validations')} className="min-h-[44px] inline-flex items-center text-xs font-semibold text-blue-500 cursor-pointer">Tout voir</button>
+            </div>
+            {waiting.length === 0 ? (
+              <p className="text-sm text-slate-500 py-4 text-center">Rien à valider pour le moment.</p>
+            ) : (
+              <ul className="divide-y divide-slate-800">
+                {waiting.map(p => (
+                  <li key={p.id} className="py-2.5 flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold text-white">{p.client_name}</p>
+                      <p className="text-xs text-slate-400">{p.employee_name}</p>
+                    </div>
+                    <span className={`shrink-0 text-xs font-semibold px-2.5 py-1 rounded-full ${p.status === 'pending_start' ? 'bg-amber-100 text-amber-800' : 'bg-blue-100 text-blue-800'}`}>
+                      {p.status === 'pending_start' ? 'Départ' : 'Fin'}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+
+          <section className={panel}>
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="font-bold text-white">Missions en cours</h3>
+              <button type="button" onClick={() => onNavigateTab && onNavigateTab('sessions')} className="min-h-[44px] inline-flex items-center text-xs font-semibold text-blue-500 cursor-pointer">Tout voir</button>
+            </div>
+            {running.length === 0 ? (
+              <p className="text-sm text-slate-500 py-4 text-center">Aucune mission en cours.</p>
+            ) : (
+              <ul className="space-y-3">
+                {running.slice(0, 5).map(p => {
+                  const total = Math.max(1, (p.target_score || 0) - (p.initial_score || 0));
+                  const pct = Math.min(100, Math.round((((p.current_score || 0) - (p.initial_score || 0)) / total) * 100));
+                  return (
+                    <li key={p.id}>
+                      <div className="flex justify-between gap-2 text-sm">
+                        <span className="font-semibold text-white">{p.client_name}</span>
+                        <span className="text-xs text-slate-400 shrink-0">{p.employee_name} · {pct}%</span>
+                      </div>
+                      <div className="h-2 rounded-full bg-slate-800 mt-1.5 overflow-hidden">
+                        <div className="h-full bg-blue-600 rounded-full" style={{ width: `${Math.max(0, pct)}%` }} />
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </section>
+        </div>
+      </div>
+    );
+    return { top, panels };
+  })();
+
+  if (activeSubTab === 'grid' || activeSubTab === 'dashboard') {
+    const adminUser = currentUser || users.find(u => u.role === 'admin') || users[0];
+    const availableOperators = users.filter(u => u.role === 'employee' && u.status === 'active');
+
+    return (
+      <div className="space-y-3 max-w-none mx-auto px-1.5 sm:px-3 lg:px-4 py-3">
+        {activeSubTab === 'dashboard' && homeParts.top}
+        {activeSubTab === 'grid' && homeParts.panels}
+        {activeSubTab === 'grid' && <h3 className="font-bold text-white pt-1">Toutes les missions</h3>}
+        {activeSubTab === 'grid' && <PostsGrid20
+          currentUser={adminUser}
+          allPosts={posts}
+          onSelectContract={(contract) => {
+            const session = posts.find(
+              p =>
+                p.client_name === contract.client_name &&
+                (p.status === 'active' || p.status === 'pending_start' || p.status === 'pending_end')
+            );
+            setSelectedAdminContract(contract);
+            setActiveSessionForModal(session || null);
+            setEditClientName(contract.client_name);
+            setEditClientId(contract.client_id || '');
+            setEditClientError(null);
+            setEditAccountTag(contract.account_tag);
+            setEditInitialScore(contract.initial_score);
+            setEditTargetScore(contract.target_score);
+            setEditCurrentScore(Math.max(contract.initial_score, contract.current_score ?? contract.initial_score));
+            setEditAccountProofs(contract.account_proof_urls || []);
+            setEditGameMode(contract.game_mode);
+            setEditShift(contract.recommended_shift);
+            setAssignedOperatorId(session ? session.employee_id : (availableOperators[0]?.id || ''));
+            setEditNotes(session?.notes || '');
+            setEditDescription(contract.description || '');
+            setEditProofMode(contract.proof_mode || 'type');
+            setEditPrice(typeof contract.client_price_ar === 'number' ? String(contract.client_price_ar) : '');
+            setTplName(''); setTplMsg(null);
+            setEditTasks({ text: (contract.tasks || []).map(k => k.text).join('\n'), required: !!contract.tasks_required });
+            setEditDue({ date: contract.due_date || '', time: contract.due_time || '', priority: contract.priority === 'Urgente' || contract.priority === 'Haute' ? contract.priority : 'Normale' });
+            setAssignSuccessMsg(null);
+            setAssignErrorMsg(null);
+          }}
+          onOpenProofLightbox={onOpenProofLightbox}
+          onNavigateToActivePost={() => onNavigateTab && onNavigateTab('sessions')}
+        />}
+
+        {/* MODAL GESTION DE LA MISSION CLIENT POUR L'ADMIN (MODIFICATION COMPLETE & VALIDATION) */}
+        {selectedAdminContract && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-3 sm:p-4 overflow-y-auto overscroll-contain animate-in fade-in">
+            <div className="bg-[#0f1722] border border-emerald-500/50 w-full max-w-2xl rounded-2xl shadow-2xl p-5 sm:p-6 space-y-4 my-auto max-h-[calc(100dvh-57px-2.5rem-env(safe-area-inset-bottom))] flex flex-col">
+              {/* Modal Header */}
+              <div className="flex items-center justify-between pb-3 border-b border-slate-800 shrink-0">
+                <div className="flex items-center gap-2.5">
+                  <div className="px-2.5 py-1 rounded-lg bg-emerald-950 text-emerald-400 font-tactical font-black text-sm border border-emerald-500/40">
+                    MISSION #{String(selectedAdminContract.post_number).padStart(2, '0')}
+                  </div>
+                  <div>
+                    <h3 className="font-tactical font-black text-white text-base">
+                      {selectedAdminContract.client_name}
+                    </h3>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  {activeSessionForModal && (
+                    <span
+                      className={`px-2 py-0.5 rounded text-[11px] font-mono font-bold uppercase ${
+                        activeSessionForModal.status === 'pending_start'
+                          ? 'bg-amber-950 text-amber-300 border border-amber-500 animate-pulse'
+                          : activeSessionForModal.status === 'pending_end'
+                          ? 'bg-cyan-950 text-cyan-300 border border-cyan-500 animate-pulse'
+                          : 'bg-emerald-950 text-emerald-400 border border-emerald-600'
+                      }`}
+                    >
+                      <span className="inline-flex items-center gap-1.5">
+                        {activeSessionForModal.status === 'pending_start' || activeSessionForModal.status === 'pending_end' ? (
+                          <Hourglass className="w-3.5 h-3.5 shrink-0" />
+                        ) : (
+                          <CircleDot className="w-3.5 h-3.5 shrink-0" />
+                        )}
+                        {activeSessionForModal.status === 'pending_start'
+                          ? 'Départ à valider'
+                          : activeSessionForModal.status === 'pending_end'
+                          ? 'Fin à valider'
+                          : 'En cours'}
+                      </span>
+                    </span>
+                  )}
+                  <button
+                    onClick={() => setSelectedAdminContract(null)}
+                    className="text-slate-400 hover:text-white p-1 cursor-pointer rounded-lg hover:bg-slate-800 transition-colors"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+
+              {/* Notifications */}
+              {assignSuccessMsg && (
+                <div className="p-3 rounded-xl bg-emerald-950/90 border border-emerald-500 text-emerald-300 text-xs font-mono flex items-center gap-2 shrink-0">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                  <span>{assignSuccessMsg}</span>
+                </div>
+              )}
+              {assignErrorMsg && (
+                <div className="p-3 rounded-xl bg-red-950/90 border border-red-500 text-red-300 text-xs font-mono flex items-center gap-2 shrink-0">
+                  <AlertTriangle className="w-4 h-4 text-red-400 shrink-0" />
+                  <span>{assignErrorMsg}</span>
+                </div>
+              )}
+
+              <div className="space-y-4 overflow-y-auto flex-1 pr-1 text-xs font-mono">
+                {/* 1. SECTION VALIDATION SI MISSION EN ATTENTE (PENDING_START OU PENDING_END) */}
+                {activeSessionForModal &&
+                  (activeSessionForModal.status === 'pending_start' || activeSessionForModal.status === 'pending_end') && (
+                    <div className="bg-[#181108] border-2 border-amber-500/70 rounded-xl p-4 space-y-3 shadow-lg shadow-amber-950/30">
+                      <div className="flex items-center justify-between border-b border-amber-700/50 pb-2">
+                        <div className="flex items-center gap-2">
+                          <Clock className="w-4 h-4 text-amber-400 animate-pulse" />
+                          <span className="font-tactical font-black text-amber-300 text-xs sm:text-sm uppercase tracking-wide">
+                            Demande envoyée par l'opérateur
+                          </span>
+                        </div>
+                        <span className="text-[11px] text-amber-400 font-bold bg-amber-950 px-2 py-0.5 rounded border border-amber-600/40">
+                          {activeSessionForModal.status === 'pending_start' ? 'DÉBUT DE MISSION' : 'FIN DE MISSION'}
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px]">
+                        <div className="bg-black/40 p-2 rounded border border-amber-800/40">
+                          <span className="text-slate-400 text-[11px] block uppercase">Opérateur</span>
+                          <strong className="text-white text-xs truncate block">{activeSessionForModal.employee_name}</strong>
+                        </div>
+                        <div className="bg-black/40 p-2 rounded border border-amber-800/40">
+                          <span className="text-slate-400 text-[11px] block uppercase">Quantité de départ</span>
+                          <strong className="text-emerald-400 text-xs block">{formatScoreM(activeSessionForModal.initial_score)}</strong>
+                        </div>
+                        <div className="bg-black/40 p-2 rounded border border-amber-800/40">
+                          <span className="text-slate-400 text-[11px] block uppercase">Quantité actuelle / finale</span>
+                          <strong className="text-cyan-400 text-xs block">
+                            {formatScoreM(activeSessionForModal.final_score ?? activeSessionForModal.current_score)}
+                          </strong>
+                        </div>
+                        <div className="bg-black/40 p-2 rounded border border-amber-800/40">
+                          <span className="text-slate-400 text-[11px] block uppercase">Horaire</span>
+                          <strong className="text-amber-300 text-xs block">{activeSessionForModal.start_time}</strong>
+                        </div>
+                      </div>
+
+                      {/* Display All Submitted Photos (1 to 4 photos) */}
+                      <div>
+                        <span className="text-[11px] text-amber-300 uppercase font-bold block mb-1.5 flex items-center gap-1">
+                          <Camera className="w-3.5 h-3.5" />
+                          <span>
+                            Justificatifs envoyés (
+                            {proofsOf(activeSessionForModal).length} photo(s), touche pour agrandir) :
+                          </span>
+                        </span>
+
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                          {(activeSessionForModal.start_proof_urls && activeSessionForModal.start_proof_urls.length > 0
+                            ? activeSessionForModal.start_proof_urls
+                            : [activeSessionForModal.start_proof_url]
+                          ).map((photoUrl, pIdx) => (
+                            <div
+                              key={pIdx}
+                              onClick={() =>
+                                onOpenProofLightbox({
+                                  imageUrl: photoUrl,
+                                  gallery: proofsOf(activeSessionForModal),
+                                  title: `Photo ${pIdx + 1} - Justificatif de départ - ${activeSessionForModal.client_name}`,
+                                  score: activeSessionForModal.initial_score,
+                                  clientTag: activeSessionForModal.client_name,
+                                  operatorName: activeSessionForModal.employee_name,
+                                  timestamp: `${activeSessionForModal.date} ${activeSessionForModal.start_time}`,
+                                })
+                              }
+                              className="relative aspect-video rounded-lg overflow-hidden border border-amber-500/70 bg-black/60 group cursor-pointer shadow hover:border-amber-400 transition-colors"
+                            >
+                              <img src={photoUrl || undefined} alt={`Photo ${pIdx + 1}`} className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
+                              <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center text-white text-[11px] font-mono transition-opacity">
+                                <Eye className="w-4 h-4 text-amber-400" />
+                              </div>
+                              <div className="absolute bottom-0 right-0 bg-black/80 text-[8px] font-mono text-amber-400 px-1 font-bold">
+                                #{pIdx + 1}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Validation / Rejection Action Buttons */}
+                      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-end gap-2 pt-2 border-t border-amber-800/40">
+                        <button
+                          type="button"
+                          onClick={() => handleOpenReject(activeSessionForModal.id)}
+                          className="px-3.5 py-2 bg-red-950/80 hover:bg-red-900 border border-red-600/60 text-red-300 font-mono text-xs rounded-xl transition-colors cursor-pointer flex items-center justify-center gap-1.5"
+                        >
+                          <XCircle className="w-4 h-4" />
+                          <span>Refuser</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleValidate(activeSessionForModal.id)}
+                          className="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-tactical font-black text-xs uppercase tracking-wider rounded-xl transition-all flex items-center justify-center gap-1.5 shadow-lg shadow-emerald-950/60 cursor-pointer"
+                        >
+                          <CheckCircle2 className="w-4 h-4" />
+                          <span>{activeSessionForModal.status === 'pending_start' ? 'Valider le départ' : 'Valider la fin'}</span>
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                {/* 2. SECTION MODIFICATION COMPLETE DE LA MISSION (ADMIN EXCLUSIF) */}
+                <div className="bg-[#141e2a] border border-slate-700 rounded-xl p-4 space-y-3">
+                  <div className="flex items-center justify-between border-b border-slate-700/60 pb-2">
+                    <div className="flex items-center gap-2">
+                      <Shield className="w-4 h-4 text-cyan-400" />
+                      <h4 className="font-tactical font-black text-white text-xs sm:text-sm uppercase tracking-wide">
+                        Modifier la mission
+                      </h4>
+                    </div>
+                    <span className="text-[11px] text-cyan-400 font-mono">Réservé au responsable</span>
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-3">
+                    <div>
+                      <label className="block text-slate-300 uppercase mb-1">Titre de la mission</label>
+                      <input
+                        type="text"
+                        value={editClientName}
+                        onChange={e => setEditClientName(e.target.value)}
+                        className="w-full bg-[#0d1622] border border-slate-600 rounded-lg p-2 text-white font-bold"
+                      />
+                    </div>
+                    <ClientPicker value={editClientId} error={editClientError}
+                      required={!!selectedAdminContract?.client_id && missionRequiresClient(readCompany(db.getSettings().company))}
+                      inputClass="w-full min-h-[44px] bg-[#0d1622] border border-slate-600 rounded-lg p-2 text-white"
+                      labelClass="block text-slate-300 uppercase mb-1" hintClass="text-[11px] text-slate-400 mt-1"
+                      onChange={id => { setEditClientId(id); setEditClientError(null); }} />
+                  </div>
+
+                  <details className="rounded-xl border border-slate-700 bg-black/10 px-3 py-2.5">
+                    <summary className="cursor-pointer font-semibold text-sm select-none">Options avancées (facultatif)</summary>
+                    <div className="mt-3 space-y-3">
+                      <DeadlineFields date={editDue.date} time={editDue.time} priority={editDue.priority} onChange={setEditDue} inputClass="w-full bg-[#0d1622] border border-slate-600 rounded-lg p-2 text-white" />
+                      <TaskListEditor text={editTasks.text} required={editTasks.required} onChange={setEditTasks} inputClass="w-full bg-[#0d1622] border border-slate-600 rounded-lg p-2 text-white" />
+                      <div className="space-y-1.5" data-notranslate="">
+                        <label className="block text-slate-300 mb-1">{appLang === 'en' ? 'Save this mission as a template' : 'Enregistrer cette mission comme modèle'}</label>
+                        <div className="flex gap-2">
+                          <input value={tplName} maxLength={60} onChange={e => { setTplName(e.target.value); setTplMsg(null); }} placeholder={appLang === 'en' ? 'Template name' : 'Nom du modèle'} className="min-w-0 flex-1 bg-[#0d1622] border border-slate-600 rounded-lg p-2 text-white" />
+                          <button type="button" onClick={() => {
+                            const c = selectedAdminContract;
+                            if (!c) return;
+                            const r = db.saveMissionTemplate(templateFromMission({ client_name: editClientName, post_type: c.post_type, description: editDescription, proof_mode: editProofMode }, tplName));
+                            setTplMsg(r.success ? { ok: true, text: appLang === 'en' ? 'Template saved (Settings > Missions).' : 'Modèle enregistré (Réglages > Missions).' } : { ok: false, text: r.error || '' });
+                            if (r.success) setTplName('');
+                          }} className="min-h-[44px] px-3 rounded-lg border border-emerald-500/50 text-emerald-300 text-xs font-semibold shrink-0">{appLang === 'en' ? 'Save as template' : 'Enregistrer comme modèle'}</button>
+                        </div>
+                        {tplMsg && <p role="status" className={`text-[11px] ${tplMsg.ok ? 'text-emerald-400' : 'text-red-400'}`}>{tplMsg.text}</p>}
+                        <p className="text-[11px] text-slate-400">{appLang === 'en' ? 'Keeps the title, type, instruction and proof only: no price, client or date.' : 'Garde seulement le titre, le type, la consigne et le justificatif : ni prix, ni client, ni date.'}</p>
+                      </div>
+                      <div>
+                        <label className="block text-slate-300 mb-1">Justificatif demandé à la fin</label>
+                        <select aria-label="Preuve demandée" value={editProofMode} onChange={e => setEditProofMode(e.target.value as typeof editProofMode)} className="w-full bg-[#0d1622] border border-slate-600 rounded-lg p-2 text-white">
+                          <option value="type">Selon le type de mission</option>
+                          <option value="none">Aucun justificatif</option>
+                          <option value="photo">Photo ou capture obligatoire</option>
+                          <option value="note">Note obligatoire</option>
+                          <option value="both">Photo et note obligatoires</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-slate-300 mb-1">Prix client de cette mission (Ar, facultatif)</label>
+                        <input type="number" min={0} step={100} value={editPrice} onChange={e => setEditPrice(e.target.value)} placeholder={`Prix du type : ${clientPriceForType(selectedAdminContract?.post_type, db.getSettings())} Ar`} className="w-full bg-[#0d1622] border border-slate-600 rounded-lg p-2 text-white" />
+                        <p className="text-[11px] text-slate-400 mt-1">Laisse vide pour utiliser le prix du type, ou le prix par défaut (Réglages, Missions).</p>
+                      </div>
+                      <p className="text-[11px] text-slate-400">Quantités (facultatives, aucun calcul n'est imposé) :</p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-slate-300 uppercase mb-1">Quantité de départ</label>
+                      <ScoreInput
+                        value={editInitialScore}
+                        onChange={changeInitial}
+                        className="w-full bg-[#0d1622] border border-slate-600 rounded-lg p-2 text-emerald-400 font-bold"
+                      />
+                      <span className="text-[11px] text-slate-500 mt-0.5 block">{formatScoreM(editInitialScore)}</span>
+                    </div>
+                    <div>
+                      <label className="block text-slate-300 uppercase mb-1">Objectif (quantité à faire)</label>
+                      <ScoreInput
+                        value={editObjective}
+                        onChange={changeObjective}
+                        className="w-full bg-[#0d1622] border border-slate-600 rounded-lg p-2 text-amber-400 font-bold"
+                      />
+                      <span className="text-[11px] text-slate-500 mt-0.5 block">{formatScoreM(editObjective)}</span>
+                    </div>
+                    <div>
+                      <label className="block text-slate-300 uppercase mb-1">Cible (total visé)</label>
+                      <ScoreInput
+                        value={editTargetScore}
+                        onChange={setEditTargetScore}
+                        className="w-full bg-[#0d1622] border border-slate-600 rounded-lg p-2 text-cyan-400 font-bold"
+                      />
+                      <span className="text-[11px] text-slate-500 mt-0.5 block">{formatScoreM(editTargetScore)}</span>
+                    </div>
+                    <div>
+                      <label className="block text-slate-300 uppercase mb-1">Fait jusqu'ici</label>
+                      <ScoreInput
+                        value={editCurrentScore}
+                        onChange={setEditCurrentScore}
+                        className="w-full bg-[#0d1622] border border-slate-600 rounded-lg p-2 text-white font-bold"
+                      />
+                      <span className="text-[11px] text-slate-500 mt-0.5 block">{formatScoreM(editCurrentScore)}</span>
+                    </div>
+                    <div className="sm:col-span-2">
+                      <label className="block text-slate-300 uppercase mb-1">À faire (cible − actuel)</label>
+                      <ScoreInput
+                        value={editReste}
+                        onChange={changeReste}
+                        className={`w-full bg-[#0d1622] border rounded-lg p-2 font-bold ${editCurrentScore > editTargetScore ? 'border-red-500 text-red-400' : 'border-slate-600 text-orange-400'}`}
+                      />
+                      <span className="text-[11px] text-slate-500 mt-0.5 block">
+                        {formatScoreM(editReste)} · liés automatiquement : Cible = Début + Objectif, Reste = Cible − Actuel
+                      </span>
+                    </div>
+                  </div>
+
+                    </div>
+                  </details>
+
+                  <div className="grid grid-cols-1 gap-3">
+                    <div>
+                      <label className="block text-slate-300 uppercase mb-1">Opérateur Assigné</label>
+                      <select
+                        value={assignedOperatorId}
+                        onChange={e => setAssignedOperatorId(e.target.value)}
+                        className="w-full bg-[#0d1622] border border-slate-600 rounded-lg p-2 text-white"
+                      >
+                        <option value="">-- Aucun / Libre --</option>
+                        {availableOperators.map(b => (
+                          <option key={b.id} value={b.id}>
+                            {b.name}{showShift(db.getSettings()) ? ` (${b.shift === 'day' ? 'Jour' : 'Nuit'})` : ''}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* Preuves du compte client : 5 photos max, visibles par les opérateurs */}
+                  <div className="bg-[#0d1622] border border-slate-700 rounded-lg p-3 space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-300 uppercase font-bold flex items-center gap-1.5">
+                        <Camera className="w-4 h-4 text-amber-400" />
+                        <span>Pièces jointes de la mission</span>
+                      </span>
+                      <span className="text-[11px] font-mono text-amber-300 font-bold bg-amber-950/70 border border-amber-500/40 px-2 py-0.5 rounded">
+                        {editAccountProofs.length} / 5 photos
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
+                      {editAccountProofs.map((url, i) => (
+                        <div key={i} className="relative aspect-square rounded-lg overflow-hidden border border-slate-600">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              onOpenProofLightbox({
+                                imageUrl: url,
+                                gallery: editAccountProofs,
+                                title: `Pièce jointe - ${editClientName}`,
+                                clientTag: editClientName,
+                              })
+                            }
+                            className="w-full h-full cursor-pointer"
+                            title="Agrandir la photo"
+                          >
+                            <img src={url || undefined} alt={`Pièce jointe ${i + 1}`} className="w-full h-full object-cover" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setEditAccountProofs(prev => prev.filter((_, k) => k !== i))}
+                            className="absolute top-1 right-1 min-w-[32px] min-h-[32px] flex items-center justify-center bg-black/80 border border-red-600 text-red-400 rounded cursor-pointer"
+                            title="Retirer cette photo"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        </div>
+                      ))}
+                      {editAccountProofs.length < 5 && (
+                        <label className="aspect-square border-2 border-dashed border-slate-600 hover:border-amber-500 rounded-lg flex flex-col items-center justify-center text-[11px] text-slate-400 cursor-pointer text-center p-1">
+                          <Camera className="w-5 h-5 mb-1" />
+                          <span>{accountProofBusy ? 'Envoi…' : 'Ajouter'}</span>
+                          <input type="file" accept="image/*" multiple onChange={handleAddAccountProofs} className="hidden" disabled={accountProofBusy} />
+                        </label>
+                      )}
+                    </div>
+                    <span className="text-[11px] text-slate-500 block">
+                      Les liens des photos sont publics : n'y mets aucune donnée personnelle ou secrète. Enregistre la mission pour valider les changements.
+                    </span>
+                  </div>
+
+                  <div>
+                    <label className="block text-slate-300 uppercase mb-1">Description de la mission</label>
+                    <textarea
+                      value={editDescription}
+                      onChange={e => setEditDescription(e.target.value)}
+                      rows={3}
+                      placeholder="ex : à finir avant vendredi, fichier Excel du client en pièce jointe"
+                      className="w-full bg-[#0d1622] border rounded-xl border-slate-600 p-2 text-white resize-y"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-slate-300 uppercase mb-1">Note du responsable</label>
+                    <input
+                      type="text"
+                      value={editNotes}
+                      onChange={e => setEditNotes(e.target.value)}
+                      placeholder="Consignes particulières pour cette mission..."
+                      className="w-full bg-[#0d1622] border border-slate-600 rounded-lg p-2 text-white"
+                    />
+                  </div>
+
+                  <div className="flex justify-end pt-1">
+                    <button
+                      type="button"
+                      onClick={handleSaveAdminModifications}
+                      className="px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-white font-tactical font-bold text-xs uppercase tracking-wider rounded-xl transition-all flex items-center gap-1.5 shadow cursor-pointer"
+                    >
+                      <Check className="w-4 h-4" />
+                      <span>Enregistrer la mission</span>
+                    </button>
+                  </div>
+
+                  <div className="pt-3 border-t border-slate-700/60">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const c = selectedAdminContract;
+                        const label = `P${String(c.post_number).padStart(2, '0')}`;
+                        askConfirm({
+                          title: `Supprimer la mission ${label} ?`,
+                          message: activeSessionForModal
+                            ? 'Une session est en cours sur cette mission : impossible de la supprimer.'
+                            : 'La mission sera supprimée. Cette action est définitive.',
+                          confirmLabel: 'Supprimer',
+                          danger: true,
+                          onConfirm: () => {
+                            const r = db.removeContract(c.id);
+                            if (!r.success) {
+                              setAssignErrorMsg(r.error || 'Impossible de supprimer cette mission.');
+                              return;
+                            }
+                            showToast('Mission supprimée.', 'success');
+                            setSelectedAdminContract(null);
+                          },
+                        });
+                      }}
+                      className="w-full min-h-[46px] flex items-center justify-center gap-2 bg-red-950/80 hover:bg-red-900 border border-red-700 text-red-300 font-tactical font-bold text-xs uppercase tracking-wider rounded-xl cursor-pointer"
+                    >
+                      <Trash2 className="w-5 h-5" />
+                      <span>Supprimer cette mission</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* 3. QUICK ASSIGNMENT IF IDLE */}
+                {!activeSessionForModal && (
+                  <div className="bg-[#121c27] border border-slate-700 rounded-xl p-4 space-y-3">
+                    <span className="font-tactical font-black text-white text-xs uppercase block">
+                      Donner la mission à un opérateur
+                    </span>
+                    <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setAssignErrorMsg(null);
+                          const operator = users.find(u => u.id === assignedOperatorId) || availableOperators[0];
+                          if (!operator) {
+                            setAssignErrorMsg('Veuillez sélectionner un opérateur.');
+                            return;
+                          }
+                          const res = db.startPost({
+                            employeeId: operator.id,
+                            clientName: editClientName,
+                            accountTag: editAccountTag,
+                            targetScore: editTargetScore,
+                            initialScore: editInitialScore,
+                            proofUrl: generateProofPlaceholder({
+                              operatorName: operator.name,
+                              score: editInitialScore,
+                              clientTag: `${editClientName} #${editAccountTag}`,
+                            }),
+                            shiftType: editShift === 'night' ? 'night' : 'day',
+                            notes: `Mission donnée directement par le responsable à ${operator.name}`,
+                            status: 'active',
+                            autoReplaceExisting: true,
+                          });
+                          if (res.success) {
+                            setAssignSuccessMsg(`Mission activée avec succès pour ${operator.name} !`);
+                            setTimeout(() => setSelectedAdminContract(null), 1200);
+                          } else {
+                            setAssignErrorMsg(res.error || 'Erreur lors de l\'activation.');
+                          }
+                        }}
+                        className="flex-1 py-2.5 px-4 bg-emerald-600 hover:bg-emerald-500 text-white font-tactical font-bold text-xs uppercase tracking-wider rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer shadow"
+                      >
+                        <UserCheck className="w-4 h-4" />
+                        <span>Confirmer</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setAssignErrorMsg(null);
+                          const res = db.startPost({
+                            employeeId: adminUser.id,
+                            clientName: editClientName,
+                            accountTag: editAccountTag,
+                            targetScore: editTargetScore,
+                            initialScore: editInitialScore,
+                            proofUrl: generateProofPlaceholder({
+                              operatorName: adminUser.name,
+                              score: editInitialScore,
+                              clientTag: `${editClientName} #${editAccountTag}`,
+                            }),
+                            shiftType: 'day',
+                            notes: `Mission ouverte par ${adminUser.name}`,
+                            status: 'active',
+                            autoReplaceExisting: true,
+                          });
+                          if (res.success) {
+                            setAssignSuccessMsg(`Mission ouverte !`);
+                            setTimeout(() => setSelectedAdminContract(null), 1200);
+                          } else {
+                            setAssignErrorMsg(res.error || 'Erreur d\'ouverture.');
+                          }
+                        }}
+                        className="py-2.5 px-4 bg-[#142333] hover:bg-[#1a2d42] border border-cyan-800/60 text-cyan-300 font-mono text-xs rounded-xl transition-colors cursor-pointer text-center"
+                      >
+                        <Zap className="w-4 h-4 inline mr-1.5 -mt-0.5" />Essayer moi-même
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* 4. EMERGENCY FORCE RELEASE IF ACTIVE */}
+                {activeSessionForModal && activeSessionForModal.status === 'active' && (
+                  <div className="bg-[#19100d] border border-amber-800/50 rounded-xl p-3 flex items-center justify-between">
+                    <div>
+                      <span className="font-bold text-amber-300 block">Mission en cours</span>
+                      <span className="text-[11px] text-slate-400">
+                        Opérateur: {activeSessionForModal.employee_name} · Quantité faite : {formatScoreM(activeSessionForModal.current_score)}
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleOpenForceRelease(activeSessionForModal.id)}
+                      className="px-3 py-1.5 bg-amber-950/80 hover:bg-amber-900 border border-amber-700/60 text-amber-300 rounded-lg text-xs font-mono transition-colors"
+                    >
+                      <Zap className="w-3.5 h-3.5 inline mr-1" />
+                      Libérer la mission
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* Modal Footer */}
+              <div className="pt-3 border-t border-slate-800 flex justify-end shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setSelectedAdminContract(null)}
+                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 font-mono text-xs rounded-xl transition-colors cursor-pointer"
+                >
+                  Fermer
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3 max-w-none mx-auto px-1.5 sm:px-3 lg:px-4 py-3">
+      {isValidations && (
+        <div className="bg-[#0f1722] border border-slate-800 rounded-xl p-3 sm:p-4 space-y-3">
+          <div className="flex items-center justify-between gap-2">
+            <h2 className="font-tactical font-black text-white text-base sm:text-lg">Validations</h2>
+            <span className={`text-xs font-mono font-bold ${pend.total > 0 ? 'text-amber-400' : 'text-slate-400'}`}>{pend.total} en attente</span>
+          </div>
+          <FilterBar label="Filtrer les validations" active={valFilter} onChange={setValFilter} filters={[
+            { id: 'all', label: 'Tout', count: pend.total },
+            { id: 'starts', label: 'Débuts', count: pend.starts },
+            { id: 'ends', label: 'Fins', count: pend.ends },
+            { id: 'advances', label: 'Avances', count: pend.advances },
+            { id: 'signups', label: 'Inscriptions', count: pend.signups },
+            { id: 'resets', label: 'Mots de passe', count: pend.resets },
+            { id: 'access', label: 'Hors horaires', count: pend.access },
+            { id: 'profiles', label: 'Profils', count: pend.profiles },
+          ]} />
+          {pend.total === 0 && <div className="text-sm text-slate-400 font-mono">Rien à valider.</div>}
+        </div>
+      )}
+
+      {isValidations && (
+        <>
+      {/* Inscriptions de nouveaux opérateurs en attente */}
+      {(valFilter === 'all' || valFilter === 'signups') && signups.length > 0 && (
+        <div className="bg-[#0d1a14] border-2 border-emerald-500 p-3 sm:p-4 space-y-3">
+          <div className="flex items-center gap-2">
+            <UserPlus className="w-5 h-5 text-emerald-400 shrink-0" />
+            <h3 className="font-tactical font-black text-white text-sm sm:text-base">
+              {signups.length} inscription{signups.length > 1 ? 's' : ''} en attente
+            </h3>
+          </div>
+          {signups.map(r => (
+            <div key={r.id} data-nav={`val-sig-${r.id}`} className="bg-[#0f1722] border rounded-xl border-slate-700 p-3 flex flex-col sm:flex-row sm:items-center gap-3">
+              <div className="min-w-0 flex-1 text-xs font-mono space-y-0.5">
+                <div className="text-white font-bold text-sm break-words">{r.name} <span className="text-slate-400 font-normal">(@{r.username})</span></div>
+                <div className="text-emerald-300 break-words">Téléphone : {r.phone || 'non renseigné'}</div>
+                {showShift(db.getSettings()) && <div className="text-slate-300">Vacation souhaité : {r.shift === 'night' ? 'Nuit' : 'Jour'}</div>}
+                {r.note && <div className="text-cyan-300 break-words">Description : {r.note}</div>}
+                <div className="text-slate-400">Demandé le {new Date(r.created_at).toLocaleString('fr-FR')}</div>
+              </div>
+              <div className="grid grid-cols-2 gap-2 sm:w-64 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => askReason({
+                    title: "Refuser l'inscription ?",
+                    message: `${r.name} verra ce motif quand il essaiera de se connecter.`,
+                    onSubmit: reason => void db.decideSignup(r.id, false, reason),
+                  })}
+                  className="px-3 py-2.5 bg-[#141e2a] hover:bg-[#1b2f44] border rounded-xl border-red-500/60 text-red-300 text-xs font-bold cursor-pointer"
+                >
+                  Refuser
+                </button>
+                <button
+                  type="button"
+                  onClick={() => askConfirm({
+                    title: "Accepter l'inscription ?",
+                    message: `${r.name} pourra se connecter avec le pseudo et le mot de passe qu'il a choisis.`,
+                    confirmLabel: 'Accepter',
+                    onConfirm: () => void db.decideSignup(r.id, true).then(res => { if (!res.success) alert(res.error); }),
+                  })}
+                  className="rounded-xl px-3 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold cursor-pointer"
+                >
+                  Accepter
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {(valFilter === 'all' || valFilter === 'access') && <AccessRequestsCard requests={accessReqs} cfg={db.getSettings()} />}
+
+      {/* URGENT : demandes de nouveau mot de passe */}
+      {(valFilter === 'all' || valFilter === 'resets') && resets.length > 0 && (
+        <div className="bg-[#1a0d0d] border-2 border-red-500 p-3 sm:p-4 space-y-3">
+          <div className="flex items-center gap-2">
+            <KeyRound className="w-5 h-5 text-red-400 shrink-0" />
+            <h3 className="font-tactical font-black text-white text-sm sm:text-base">
+              URGENT · {resets.length} demande{resets.length > 1 ? 's' : ''} de mot de passe
+            </h3>
+          </div>
+          {resets.map(r => (
+            <div key={r.id} data-nav={`val-rst-${r.id}`} className="bg-[#0f1722] border rounded-xl border-slate-700 p-3 flex flex-col sm:flex-row sm:items-center gap-3">
+              <div className="min-w-0 flex-1 text-xs font-mono space-y-0.5">
+                <div className="text-white font-bold text-sm break-words">{r.name} <span className="text-slate-400 font-normal">(@{r.username})</span></div>
+                <div className="text-amber-300 break-words">Téléphone : {r.phone || 'non renseigné'}</div>
+                {r.note && <div className="text-cyan-300 break-words">Description : {r.note}</div>}
+                <div className="text-slate-400">Demandé le {new Date(r.created_at).toLocaleString('fr-FR')}</div>
+              </div>
+              <div className="grid grid-cols-2 gap-2 sm:w-64 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => askReason({
+                    title: 'Refuser la demande ?',
+                    message: `Le mot de passe de ${r.name} ne changera pas. Il verra ce motif quand il essaiera de se connecter.`,
+                    onSubmit: reason => void db.decidePasswordReset(r.id, false, reason),
+                  })}
+                  className="px-3 py-2.5 bg-[#141e2a] hover:bg-[#1b2f44] border rounded-xl border-red-500/60 text-red-300 text-xs font-bold cursor-pointer"
+                >
+                  Refuser
+                </button>
+                <button
+                  type="button"
+                  onClick={() => askConfirm({
+                    title: 'Valider la demande ?',
+                    message: `${r.name} pourra se connecter avec le nouveau mot de passe qu'il a choisi.`,
+                    confirmLabel: 'Valider',
+                    onConfirm: () => void db.decidePasswordReset(r.id, true),
+                  })}
+                  className="rounded-xl px-3 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold cursor-pointer"
+                >
+                  Valider
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Modifications de profil à valider */}
+      {(valFilter === 'all' || valFilter === 'profiles') && profileReqs.length > 0 && (
+        <div className="bg-[#1a150a] border-2 border-amber-500 p-3 sm:p-4 space-y-3">
+          <h3 className="font-tactical font-black text-white text-sm sm:text-base">
+            {profileReqs.length} modification{profileReqs.length > 1 ? 's' : ''} de profil à valider
+          </h3>
+          {profileErr && <div className="p-2 bg-red-950 border rounded-xl border-red-500/60 text-red-200 text-xs font-semibold">{profileErr}</div>}
+          {profileReqs.map(r => {
+            const rows: { label: string; from: string; to: string }[] = [];
+            if (r.name !== r.old.name) rows.push({ label: 'Nom', from: r.old.name, to: r.name });
+            if (r.username !== r.old.username) rows.push({ label: 'Pseudo', from: `@${r.old.username}`, to: `@${r.username}` });
+            if (r.phone !== r.old.phone) rows.push({ label: 'Téléphone', from: r.old.phone || 'vide', to: r.phone || 'vide' });
+            const photoChanged = r.avatar_url !== r.old.avatar_url;
+            return (
+              <div key={r.id} data-nav={`val-prf-${r.id}`} className="bg-[#0f1722] border rounded-xl border-slate-700 p-3 flex flex-col sm:flex-row sm:items-center gap-3">
+                <div className="min-w-0 flex-1 text-xs font-mono space-y-1">
+                  <div className="text-white font-bold text-sm break-words">{r.old.name} <span className="text-slate-400 font-normal">(@{r.old.username})</span></div>
+                  {r.note && <div className="text-cyan-300 break-words">Description : {r.note}</div>}
+                  {rows.map(x => (
+                    <div key={x.label} className="break-words">
+                      <span className="text-slate-400">{x.label} : </span>
+                      <span className="text-red-300 line-through">{x.from}</span>
+                      <span className="text-slate-400"> → </span>
+                      <span className="text-emerald-300 font-bold">{x.to}</span>
+                    </div>
+                  ))}
+                  {photoChanged && (
+                    <div className="flex items-center gap-2 text-slate-300">
+                      <span>Photo :</span>
+                      {r.old.avatar_url && <Avatar src={r.old.avatar_url} name={r.old.name} className="w-10 h-10" />}
+                      <span className="text-slate-400">→</span>
+                      <Avatar src={r.avatar_url} name={r.name} className="w-10 h-10" />
+                    </div>
+                  )}
+                </div>
+                <div className="grid grid-cols-2 gap-2 sm:w-64 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => askReason({
+                      title: 'Refuser la modification ?',
+                      message: `Le profil de ${r.old.name} ne changera pas. Il verra ce motif dans son profil.`,
+                      onSubmit: reason => { setProfileErr(null); void db.decideProfileRequest(r.id, false, reason); },
+                    })}
+                    className="px-3 py-2.5 bg-[#141e2a] hover:bg-[#1b2f44] border rounded-xl border-red-500/60 text-red-300 text-xs font-bold cursor-pointer"
+                  >
+                    Refuser
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => askConfirm({
+                      title: 'Valider la modification ?',
+                      message: `Le profil de ${r.old.name} sera mis à jour.`,
+                      confirmLabel: 'Valider',
+                      onConfirm: async () => {
+                        setProfileErr(null);
+                        const res = await db.decideProfileRequest(r.id, true);
+                        if (!res.success) setProfileErr(res.error || 'Erreur.');
+                      },
+                    })}
+                    className="rounded-xl px-3 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold cursor-pointer"
+                  >
+                    Valider
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+        </>
+      )}
+
+      {isValidations && (valFilter === 'all' || valFilter === 'advances') && pendingAdvances.length > 0 && (
+        <div className="bg-[#1a150a] border-2 border-amber-500 p-3 sm:p-4 space-y-3">
+          <h3 className="font-tactical font-black text-white text-sm sm:text-base flex items-center gap-2">
+            <DollarSign className="w-5 h-5 text-amber-400 shrink-0" />
+            {pendingAdvances.length} avance{pendingAdvances.length > 1 ? 's' : ''} en attente
+          </h3>
+          {pendingAdvances.map(a => (
+            <div key={a.id} data-nav={`val-adv-${a.id}`} className="bg-[#0f1722] border rounded-xl border-slate-700 p-3 flex flex-col sm:flex-row sm:items-center gap-3">
+              <div className="min-w-0 flex-1 text-xs font-mono space-y-0.5">
+                <div className="text-white font-bold text-sm break-words">{a.employee_name}</div>
+                <div className="text-amber-300 font-bold">{formatCurrencyAr(a.amount_ar)}</div>
+                <div className="text-slate-300 break-words">{a.reason}</div>
+                <div className="text-slate-400">Demandé le {a.request_date}</div>
+              </div>
+              <div className="grid grid-cols-2 gap-2 sm:w-64 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => askReason({
+                    title: "Refuser l'avance ?",
+                    message: `${a.employee_name} verra ce motif.`,
+                    onSubmit: reason => { db.reviewAdvanceRequest(a.id, false, reason); },
+                  })}
+                  className="px-3 py-2.5 bg-[#141e2a] hover:bg-[#1b2f44] border rounded-xl border-red-500/60 text-red-300 text-xs font-bold cursor-pointer"
+                >
+                  Refuser
+                </button>
+                <button
+                  type="button"
+                  onClick={() => askReason({
+                    title: "Accepter l'avance ?",
+                    message: `${formatCurrencyAr(a.amount_ar)} pour ${a.employee_name}.`,
+                    confirmLabel: 'Accepter',
+                    optional: true,
+                    onSubmit: note => { db.reviewAdvanceRequest(a.id, true, note || "Validé par l'administrateur"); },
+                  })}
+                  className="rounded-xl px-3 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold cursor-pointer"
+                >
+                  Accepter
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {isSecurity && (
+        <>
+      {/* SECTION 1: ADMIN ALERT BOX (journal de sécurité) */}
+      <div className={`rounded-xl border shadow-2xl overflow-hidden transition-all duration-300 ${
+        activeViolations.length > 0
+          ? 'bg-[#180a0d] border-red-500/80 animate-radar-alert'
+          : 'bg-[#0f1722] border-slate-800'
+      }`}>
+        <div className="rounded-xl bg-red-950/70 px-6 py-3.5 border-b border-red-900/60 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-lg bg-red-600/20 border border-red-500/50 flex items-center justify-center text-red-400">
+              <ShieldAlert className="w-5 h-5 animate-pulse" />
+            </div>
+            <div>
+              <h3 className="font-tactical font-black text-white text-base tracking-wide flex items-center gap-2">
+                <span>CONTRÔLE ET SÉCURITÉ</span>
+                <span className="text-xs font-mono bg-red-600 text-white px-2 py-0.5 rounded font-bold">
+                  {activeViolations.length} ALERTE(S) ACTIVE(S)
+                </span>
+              </h3>
+              <p className="text-xs text-red-200/80 font-mono">
+                Surveillance automatique des inversions de volume, tentatives multi-mission et anomalies.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div className="p-6">
+          {securityLogs.length === 0 ? (
+            <div className="text-center py-6 text-slate-400 text-xs font-mono">
+              Aucune violation de sécurité détectée. Tous les opérateurs respectent les protocoles.
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {securityLogs.slice(0, 6).map(log => {
+                const user = users.find(u => u.id === log.employee_id);
+                const isBlocked = user?.status === 'blocked';
+
+                return (
+                  <div
+                    key={log.id}
+                    data-nav={`sec-${log.id}`}
+                    className={`p-3.5 sm:p-4 rounded-xl border flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 sm:gap-4 transition-colors ${
+                      log.resolved
+                        ? 'bg-slate-900/50 border-slate-800/80 opacity-70'
+                        : 'bg-red-950/40 border-red-800/60 shadow-lg'
+                    }`}
+                  >
+                    <div className="w-full sm:flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-[11px] sm:text-xs font-mono font-bold uppercase px-2 py-0.5 rounded bg-red-900/80 text-red-200 border border-red-700">
+                          {log.violation_type.replace('_', ' ').toUpperCase()}
+                        </span>
+                        <span className="text-xs font-bold text-white font-mono">
+                          Opérateur: {log.employee_name}
+                        </span>
+                        <span className="text-[11px] sm:text-[11px] text-slate-400 font-mono">
+                          ({log.timestamp})
+                        </span>
+                      </div>
+
+                      <p className="text-xs text-slate-200 mt-2 font-mono leading-relaxed">
+                        {log.description}
+                      </p>
+
+                      {log.details && (
+                        <div className="mt-2 text-[11px] sm:text-[11px] font-mono text-slate-400 flex flex-wrap gap-2.5 sm:gap-3">
+                          {log.details.initial_score !== undefined && (
+                            <span>Quantité initiale: <strong className="text-white">{formatScoreM(log.details.initial_score)} unités</strong></span>
+                          )}
+                          {log.details.attempted_score !== undefined && (
+                            <span>Quantité tentée: <strong className="text-red-400">{formatScoreM(log.details.attempted_score)} unités</strong></span>
+                          )}
+                          {log.details.client_name && (
+                            <span>Mission : <strong className="text-cyan-400">{log.details.client_name}</strong></span>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Direct Action Buttons: [ Block User ] / [ Unblock User ] */}
+                    <div className="flex items-center gap-2 w-full sm:w-auto justify-end shrink-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-800/60">
+                      <button
+                        onClick={() => handleToggleBlock(log.employee_id)}
+                        className={`flex-1 sm:flex-none justify-center px-3 py-1.5 rounded-lg text-xs font-mono font-bold flex items-center gap-1.5 transition-colors shadow ${
+                          isBlocked
+                            ? 'bg-emerald-600 hover:bg-emerald-500 text-white'
+                            : 'bg-red-600 hover:bg-red-500 text-white'
+                        }`}
+                        title={isBlocked ? 'Débloquer l\'utilisateur' : 'Bloquer immédiatement l\'utilisateur'}
+                      >
+                        {isBlocked ? <UserCheck className="w-3.5 h-3.5" /> : <Ban className="w-3.5 h-3.5" />}
+                        <span>{isBlocked ? 'Débloquer Compte' : 'Bloquer Utilisateur'}</span>
+                      </button>
+
+                      {!log.resolved && (
+                        <button
+                          onClick={() => handleDismissViolation(log.id)}
+                          className="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-xs font-mono transition-colors"
+                          title="Classer l'incident"
+                        >
+                          <Check className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+
+        </>
+      )}
+
+      {isValidations && showSubs && (
+        <>
+      {/* SECTION 2: SUBMISSIONS REVIEW PANEL */}
+      <div className="bg-[#0f1722] border border-slate-800 rounded-xl shadow-xl overflow-hidden">
+        <div className="rounded-xl bg-[#121c27] px-6 py-4 border-b border-slate-800 flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <h3 className="font-tactical font-bold text-white text-base tracking-wide flex items-center gap-2">
+              <CheckCircle2 className="w-5 h-5 text-emerald-400" />
+              Validation des missions
+            </h3>
+            <p className="text-xs text-slate-400 font-mono">
+              Vérifie le travail et les justificatifs, puis valide ou refuse avec un motif.
+            </p>
+          </div>
+
+          {/* Submissions Filter */}
+          <div className="flex items-center gap-1 bg-[#141e2a] p-1 rounded-lg border border-slate-700 text-xs font-mono">
+            <button
+              onClick={() => setSubmissionFilter('all')}
+              className={`px-3 min-h-[44px] rounded transition-colors ${
+                submissionFilter === 'all'
+                  ? 'bg-emerald-600 text-white font-bold'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              Tous ({pendingSubmissions.length})
+            </button>
+            <button
+              onClick={() => setSubmissionFilter('pending_start')}
+              className={`px-3 min-h-[44px] rounded transition-colors ${
+                submissionFilter === 'pending_start'
+                  ? 'bg-emerald-600 text-white font-bold'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              Départs ({pendingSubmissions.filter(p => p.status === 'pending_start').length})
+            </button>
+            <button
+              onClick={() => setSubmissionFilter('pending_end')}
+              className={`px-3 min-h-[44px] rounded transition-colors ${
+                submissionFilter === 'pending_end'
+                  ? 'bg-emerald-600 text-white font-bold'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              Fins ({pendingSubmissions.filter(p => p.status === 'pending_end').length})
+            </button>
+          </div>
+        </div>
+
+        <div className="p-6">
+          {pendingSheets.length > 0 && (isValidations ? valFilter !== 'starts' : submissionFilter !== 'pending_start') && (
+            <div data-sheet-batch className="mb-4 space-y-2">
+              <div className="text-xs font-mono text-slate-400">Feuilles du jour à valider (saisies par un chef d'équipe)</div>
+              {pendingSheets.map(s => (
+                <div key={s.key} data-sheet-batch-item className="rounded-lg border border-emerald-800/60 bg-emerald-950/20 p-3 flex flex-wrap items-center gap-2">
+                  <div className="min-w-0 flex-1 text-sm text-slate-200">
+                    <span className="font-semibold text-white">{s.date}</span> · {s.byName ? `saisie par ${s.byName}` : 'saisie par un chef'} · {s.count} lignes ({s.present} présents){s.estimatedAr > 0 ? ` · ≈ ${s.estimatedAr.toLocaleString('fr-FR')} Ar` : ''}
+                  </div>
+                  {batchConfirm === s.key ? (
+                    <>
+                      <button type="button" data-sheet-batch-confirm disabled={batchBusy !== null} onClick={() => void validateSheet(s)} className="min-h-[44px] px-4 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-sm font-bold">{batchBusy === s.key ? 'Validation…' : `Confirmer : valider ${s.count} lignes`}</button>
+                      <button type="button" disabled={batchBusy !== null} onClick={() => setBatchConfirm(null)} className="min-h-[44px] px-3 rounded-lg border border-slate-600 text-slate-200 text-sm">Annuler</button>
+                    </>
+                  ) : (
+                    <button type="button" data-sheet-batch-start disabled={batchBusy !== null} onClick={() => setBatchConfirm(s.key)} className="min-h-[44px] px-4 rounded-lg bg-emerald-700 hover:bg-emerald-600 disabled:opacity-50 text-white text-sm font-bold">Tout valider ({s.count})</button>
+                  )}
+                </div>
+              ))}
+              <div className="text-[11px] text-slate-500">Pour refuser une ligne ou ajouter un motif, utilise les cartes ci-dessous : le refus reste ligne par ligne.</div>
+            </div>
+          )}
+          {filteredSubmissions.length === 0 ? (
+            <div className="text-center py-10 text-slate-500 text-xs font-mono border border-dashed border-slate-800 rounded-lg">
+              Aucune soumission en attente de révision pour le moment.
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {filteredSubmissions.map(post => {
+                const isStart = post.status === 'pending_start';
+                const finalScore = post.final_score ?? post.current_score;
+                const scoreDiff = isStart ? 0 : Math.max(0, finalScore - post.initial_score);
+                const wl = isWorkLine(post); // ligne de la feuille du jour : ni score ni preuve
+
+                return (
+                  <div
+                    key={post.id}
+                    data-nav={`val-post-${post.id}`}
+                    className="bg-[#131d2a] border border-slate-800 rounded-xl p-5 hover:border-slate-700 transition-colors space-y-4"
+                  >
+                    {/* Header line */}
+                    <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-800">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span
+                            className={`px-2 py-0.5 rounded text-[11px] font-mono font-bold uppercase ${
+                              isStart
+                                ? 'bg-cyan-950 text-cyan-300 border border-cyan-700'
+                                : 'bg-emerald-950 text-emerald-300 border border-emerald-700'
+                            }`}
+                          >
+                            {wl ? 'Saisie à valider' : isStart ? 'Demande de départ' : 'Travail terminé à vérifier'}
+                          </span>
+                          <span className="text-xs font-mono text-slate-400">
+                            {wl ? post.date : <>{showShift(db.getSettings()) ? `Vacation ${post.shift_type.toUpperCase()} · ` : ''}Reçu à {post.start_time}</>}
+                          </span>
+                        </div>
+                        <h4 className="text-base font-bold text-white mt-1">
+                          {wl ? '' : 'Mission : '}{post.client_name}{wl ? '' : ` (${post.account_tag})`} <PendingMark col="posts" id={post.id} className="align-middle" />
+                        </h4>
+                        <p className="text-xs text-slate-300 font-mono">
+                          Opérateur : <strong className="text-emerald-400">{post.employee_name}</strong>
+                        </p>
+                      </div>
+
+                      {/* Quantité faite */}
+                      {!isStart && !wl && (
+                        <div className="bg-blue-950/50 border border-blue-500/40 p-3 rounded-lg text-right font-mono">
+                          <div className="text-[11px] uppercase text-blue-300">Quantité faite</div>
+                          <div className="text-lg font-bold text-blue-200">
+                            +{formatScoreM(scoreDiff)}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {wl && (
+                      <div data-work-line className="rounded-lg border border-emerald-800 bg-emerald-950/30 p-3 text-sm text-emerald-100">
+                        <div className="font-semibold">{workLineDetail(post) || 'Ligne vide'}</div>
+                        <div className="text-xs text-slate-500 mt-0.5">{workLineBy(post)}</div>
+                      </div>
+                    )}
+
+                    {!isStart && !wl && <AdminChecklist type={db.getContracts().find(c => c.client_name === post.client_name)?.post_type} />}
+
+                    {/* Scores Comparison */}
+                    <div className={wl ? 'hidden' : 'grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs font-mono'}>
+                      <div className="bg-[#0b1118] p-2.5 rounded-lg border border-slate-800">
+                        <span className="text-slate-500 text-[11px] block uppercase">Quantité de départ</span>
+                        <span className="text-white font-bold">{formatScoreM(post.initial_score)} unités</span>
+                      </div>
+                      <div className="bg-[#0b1118] p-2.5 rounded-lg border border-slate-800">
+                        <span className="text-slate-500 text-[11px] block uppercase">Quantité envoyée</span>
+                        <span className="text-cyan-400 font-bold">{formatScoreM(finalScore)} unités</span>
+                      </div>
+                      <div className="bg-[#0b1118] p-2.5 rounded-lg border border-slate-800">
+                        <span className="text-slate-500 text-[11px] block uppercase">Objectif</span>
+                        <span className="text-amber-400 font-bold">{formatScoreM(post.target_score - post.initial_score)}</span>
+                      </div>
+                      <div className="bg-[#0b1118] p-2.5 rounded-lg border border-slate-800">
+                        <span className="text-slate-500 text-[11px] block uppercase">Progression</span>
+                        <span className="text-emerald-400 font-bold">
+                          {Math.round(((finalScore - post.initial_score) / (post.target_score - post.initial_score || 1)) * 100)}%
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Clickable Thumbnail Previews for Lightbox */}
+                    <div className={wl ? 'hidden' : 'pt-2'}>
+                      <span className="text-xs uppercase font-mono font-semibold text-slate-400 block mb-2">
+                        Justificatifs Captures d'Écran (Cliquez pour agrandir dans la Lightbox)
+                      </span>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        
+                        {/* Start Proof Thumbnail */}
+                        <div
+                          onClick={() =>
+                            onOpenProofLightbox({
+                              imageUrl: post.start_proof_url,
+                              gallery: proofsOf(post),
+                              title: `Justificatif de départ - ${post.client_name}`,
+                              score: post.initial_score,
+                              clientTag: post.client_name,
+                              operatorName: post.employee_name,
+                              timestamp: `${post.date} ${post.start_time}`,
+                            })
+                          }
+                          className="group relative cursor-pointer bg-slate-900 border border-slate-700/80 rounded-lg overflow-hidden p-1.5 hover:border-emerald-500 transition-all hover:shadow-lg"
+                        >
+                          <div className="text-[11px] font-mono text-slate-400 mb-1 flex items-center justify-between px-1">
+                            <span className="text-emerald-400 font-bold">PHOTO DÉPART</span>
+                            <span className="text-slate-500">{post.start_time}</span>
+                          </div>
+                          <div className="relative aspect-video rounded overflow-hidden bg-black/60">
+                            <img
+                              src={post.start_proof_url || undefined}
+                              alt="Justificatif de départ"
+                              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
+                            />
+                            <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-1.5 text-white text-xs font-mono">
+                              <Eye className="w-4 h-4 text-emerald-400" />
+                              <span>Inspecter Plein Écran</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* End Proof Thumbnail (if pending_end) */}
+                        {post.end_proof_url && (
+                          <div
+                            onClick={() =>
+                              onOpenProofLightbox({
+                                imageUrl: post.end_proof_url!,
+                                gallery: proofsOf(post),
+                                title: `Justificatif de Fin - ${post.client_name}`,
+                                score: finalScore,
+                                clientTag: post.client_name,
+                                operatorName: post.employee_name,
+                                timestamp: `${post.date} ${post.end_time || ''}`,
+                              })
+                            }
+                            className="group relative cursor-pointer bg-slate-900 border border-slate-700/80 rounded-lg overflow-hidden p-1.5 hover:border-emerald-500 transition-all hover:shadow-lg"
+                          >
+                            <div className="text-[11px] font-mono text-slate-400 mb-1 flex items-center justify-between px-1">
+                              <span className="text-cyan-400 font-bold">PHOTO FIN</span>
+                              <span className="text-slate-500">{post.end_time || 'Clôture'}</span>
+                            </div>
+                            <div className="relative aspect-video rounded overflow-hidden bg-black/60">
+                              <img
+                                src={post.end_proof_url || undefined}
+                                alt="Justificatif Fin"
+                                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
+                              />
+                              <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-1.5 text-white text-xs font-mono">
+                                <Eye className="w-4 h-4 text-cyan-400" />
+                                <span>Inspecter Plein Écran</span>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Notes if any */}
+                    {post.notes && (
+                      <div className="text-xs text-slate-400 font-mono bg-[#090d12] p-2.5 rounded border border-slate-800">
+                        <span className="text-slate-500 uppercase">Notes Opérateur: </span>
+                        {post.notes}
+                      </div>
+                    )}
+
+                    {/* Action Buttons: [ Validate ], [ Reject ], [ Force Release Post ] */}
+                    <div className="pt-3 border-t border-slate-800 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 sm:gap-3">
+                      <div className={wl ? 'hidden' : undefined}>
+                        {/* Emergency Force Release button to unstick bugged shifts */}
+                        <button
+                          onClick={() => handleOpenForceRelease(post.id)}
+                          className="w-full sm:w-auto px-3 py-2 sm:py-1.5 bg-amber-950/60 hover:bg-amber-900/80 text-amber-300 border border-amber-700/60 rounded text-xs font-mono transition-colors flex items-center justify-center gap-1.5"
+                          title="Débloquer d'urgence l'opérateur en cas de bug de session"
+                        >
+                          <Zap className="w-3.5 h-3.5" />
+                          <span>Force Release Post</span>
+                        </button>
+                      </div>
+
+                      <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                        {/* Reject button */}
+                        <button
+                          onClick={() => handleOpenReject(post.id)}
+                          className="w-full sm:w-auto px-4 py-2 sm:py-1.5 bg-red-950/60 hover:bg-red-900/80 text-red-300 border border-red-700/60 rounded text-xs font-mono font-bold transition-colors flex items-center justify-center gap-1.5"
+                        >
+                          <XCircle className="w-4 h-4" />
+                          <span>Rejeter Soumission</span>
+                        </button>
+
+                        {/* Validate button */}
+                        <button
+                          onClick={() => handleValidate(post.id)}
+                          className="w-full sm:w-auto px-5 py-2.5 sm:py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-xs font-tactical font-bold uppercase tracking-wider transition-colors flex items-center justify-center gap-1.5 shadow-lg shadow-emerald-950/60"
+                        >
+                          <CheckCircle2 className="w-4 h-4" />
+                          <span>{wl ? 'Valider la saisie' : 'Valider la mission'}</span>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+
+        </>
+      )}
+
+      {isSessions && (
+        <>
+      {/* SECTION 3: CONNECTED EMPLOYEES & LIVE FEED */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        
+        {/* Connected Opérateurs List */}
+        <div className="bg-[#0f1722] border border-slate-800 rounded-xl p-6 shadow-xl lg:col-span-1">
+          {waitingQueue.length > 0 && (
+            <div className="mb-4 bg-[#1a150a] border-2 border-amber-500 p-3 space-y-2">
+              <h3 className="font-tactical font-black text-white text-sm">File d'attente « sans mission » ({waitingQueue.length})</h3>
+              {waitingQueue.map(w => (
+                <div key={w.user.id} className="flex items-center justify-between gap-2 text-xs font-mono">
+                  <span className="text-white break-words min-w-0">#{w.position} · {w.user.name}</span>
+                  <span className={`shrink-0 font-bold ${w.minutes >= 30 ? 'text-red-400' : w.minutes >= 15 ? 'text-amber-300' : 'text-slate-300'}`}>
+                    attend depuis {w.minutes} min
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="font-tactical font-bold text-white text-base flex items-center gap-2">
+              <Radio className="w-4 h-4 text-cyan-400" />
+              Équipe connectée
+            </h3>
+            <span className="text-[11px] font-mono text-emerald-400 font-semibold">
+              {onlineCount.online + staffCount.online} En Ligne
+            </span>
+          </div>
+
+          <div className="space-y-3">
+            {users
+              .filter(u => isTracked(u.role) && u.status !== 'blocked')
+              .sort((a, b) => ROLE_RANK[a.role] - ROLE_RANK[b.role])
+              .map(emp => {
+                const active = posts.find(
+                  p => p.employee_id === emp.id && (p.status === 'active' || p.status === 'pending_start')
+                );
+                const live = liveStatus(emp, posts, presence);
+                const isStaff = emp.role !== 'employee';
+
+                return (
+                  <div
+                    key={emp.id}
+                    className="bg-[#121a24] p-3 rounded-lg border border-slate-800 flex items-center justify-between text-xs font-mono"
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <div className="relative">
+                        <Avatar src={emp.avatar_url} name={emp.name} className="w-8 h-8" />
+                        <span
+                          className={`absolute bottom-0 right-0 w-2 h-2 rounded-full border border-slate-900 ${LIVE_META[live.status].dot}`}
+                        />
+                      </div>
+                      <div>
+                        <div className="font-semibold text-white flex items-center gap-1.5">
+                          <span>{emp.name}</span>
+                          {emp.status === 'blocked' && (
+                            <span className="text-[11px] bg-red-950 text-red-400 px-1 rounded">Banni</span>
+                          )}
+                        </div>
+                        <div className="text-[11px] text-slate-400">
+                          {isStaff ? `${emp.role === 'team_lead' ? "Chef d'équipe" : 'Comptable'} · ` : showShift(db.getSettings()) ? `Vacation ${emp.shift.toUpperCase()} · ` : ''}{active && !isStaff ? `En cours : ${active.client_name}` : liveText(live, appLang === 'en' ? 'en' : 'fr')}
+                        </div>
+                      </div>
+                    </div>
+
+                    {onOpenEmployeeCV && (
+                      <button
+                        onClick={() => onOpenEmployeeCV(emp)}
+                        className="min-w-[44px] min-h-[44px] inline-flex items-center justify-center hover:bg-slate-700 rounded text-slate-400 hover:text-white cursor-pointer"
+                        title="Voir le profil" aria-label="Voir le profil"
+                      >
+                        <Eye className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+          </div>
+        </div>
+
+        {/* Quick Links & Shortcuts */}
+        <div className="bg-[#0f1722] border border-slate-800 rounded-xl p-6 shadow-xl lg:col-span-2 flex flex-col justify-between">
+          <div>
+            <h3 className="font-tactical font-bold text-white text-base flex items-center gap-2 mb-2">
+              <Zap className="w-4 h-4 text-amber-400" />
+              Gestion &amp; Accès Rapides
+            </h3>
+            <p className="text-xs text-slate-400 font-mono mb-6">
+              Raccourcis vers la gestion d'équipe, consultations des profils et calendriers de performances mensuelles.
+            </p>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <button
+                onClick={onNavigateToEmployees}
+                className="p-4 bg-[#131c28] hover:bg-[#182333] border border-slate-700 rounded-xl text-left transition-colors group"
+              >
+                <div className="font-tactical font-bold text-white text-sm group-hover:text-emerald-400 flex items-center justify-between">
+                  <span>Gestion des Opérateurs</span>
+                  <span className="text-xs font-mono text-emerald-400">→</span>
+                </div>
+                <p className="text-xs text-slate-400 font-mono mt-1">
+                  Tri par Vacation Jour/Nuit, badges de performance, blocages et suppression de profils.
+                </p>
+              </button>
+
+              <button
+                onClick={onNavigateToCalendar}
+                className="p-4 bg-[#131c28] hover:bg-[#182333] border border-slate-700 rounded-xl text-left transition-colors group"
+              >
+                <div className="font-tactical font-bold text-white text-sm group-hover:text-cyan-400 flex items-center justify-between">
+                  <span>Calendrier Mensuel Interactif</span>
+                  <span className="text-xs font-mono text-cyan-400">→</span>
+                </div>
+                <p className="text-xs text-slate-400 font-mono mt-1">
+                  Grille des statuts (Objectif Atteint, Absent, etc.) et modales détaillées au clic.
+                </p>
+              </button>
+            </div>
+          </div>
+
+          <div className="mt-6 pt-4 border-t border-slate-800 text-[11px] font-mono text-slate-500 flex items-center justify-between">
+            <span>Gestion Pro · espace du responsable</span>
+            <span className="text-emerald-400">BDD Locale Active</span>
+          </div>
+        </div>
+      </div>
+
+        </>
+      )}
+
+      {/* REJECT MODAL */}
+      {rejectingPostId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+          <div className="bg-[#0f1722] border border-slate-700 w-full max-w-md rounded-xl p-6 space-y-4 text-xs font-mono shadow-2xl">
+            <h3 className="font-tactical font-bold text-white text-base text-red-400 flex items-center gap-2">
+              <AlertTriangle className="w-5 h-5" />
+              Motif de Rejet de la Soumission
+            </h3>
+            <p className="text-slate-400">
+              Veuillez préciser la raison du rejet qui sera notifiée à l'opérateur opérateur.
+            </p>
+
+            <form onSubmit={handleConfirmReject} className="space-y-4">
+              <div>
+                <label className="block text-slate-300 uppercase mb-1">Raison du Rejet</label>
+                <textarea
+                  rows={3}
+                  value={rejectReason}
+                  onChange={e => setRejectReason(e.target.value)}
+                  required
+                  placeholder="ex : justificatif illisible, quantité qui ne correspond pas au travail..."
+                  className="w-full bg-[#141e2a] border border-slate-700 rounded-lg p-2.5 text-white placeholder-slate-500 focus:outline-none focus:border-red-500"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setRejectingPostId(null)}
+                  className="px-3 py-1.5 bg-slate-800 text-slate-300 rounded"
+                >
+                  Annuler
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-1.5 bg-red-600 hover:bg-red-500 text-white font-bold rounded"
+                >
+                  Confirmer le Rejet
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* FORCE RELEASE MODAL */}
+      {forceReleasePostId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+          <div className="bg-[#0f1722] border border-slate-700 w-full max-w-md rounded-xl p-6 space-y-4 text-xs font-mono shadow-2xl">
+            <h3 className="font-tactical font-bold text-white text-base text-amber-400 flex items-center gap-2">
+              <Zap className="w-5 h-5" />
+              Force Release Post (Libération d'Urgence)
+            </h3>
+            <p className="text-slate-400">
+              Cette action déverrouille immédiatement la session et libère l'employé bloqué par la contrainte Anti-Multi-Mission.
+            </p>
+
+            <form onSubmit={handleConfirmForceRelease} className="space-y-4">
+              <div>
+                <label className="block text-slate-300 uppercase mb-1">Motif de Déblocage</label>
+                <input
+                  type="text"
+                  value={forceReleaseReason}
+                  onChange={e => setForceReleaseReason(e.target.value)}
+                  className="w-full bg-[#141e2a] border border-slate-700 rounded-lg p-2 text-white"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setForceReleasePostId(null)}
+                  className="px-3 py-1.5 bg-slate-800 text-slate-300 rounded"
+                >
+                  Annuler
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-1.5 bg-amber-600 hover:bg-amber-500 text-white font-bold rounded"
+                >
+                  Exécuter Libérer la mission
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+    </div>
+  );
+};

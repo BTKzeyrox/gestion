@@ -1,0 +1,620 @@
+// Types TypeScript des données de l'appli : utilisateurs, missions, avances, messages, actualités, clients, finances, stock, factures et achats.
+// Utilisé par : App.tsx, AccessBanner.tsx, AccessRequestsCard.tsx, AdvanceHistory.tsx, CVViewerModal.tsx, ChatDialogs.tsx, ChatView.tsx et 76 autres. Contrôlé par : npm run check:finance et 6 autres commandes check.
+// Pour modifier : changer un champ ici touche tout ce qui lit cette donnée ; les rôles sont dans UserRole (admin, employee, accountant, team_lead).
+import type { MissionTemplate } from '../utils/missionTemplates';
+import type { RecurringRule } from '../utils/recurring';
+import type { AutoReportSetting } from '../utils/autoReport';
+import type { TeamGoal } from '../utils/teamGoals';
+import type { MonthlyPlan } from '../utils/budgetPlan';
+// Demande de connexion hors horaires (vue du responsable) : en attente, ou autorisée et encore valable
+export interface AccessRequest {
+  id: string;
+  user_id: string;
+  name: string;
+  username: string;
+  role: string;
+  shift: 'day' | 'night';
+  reason: string;
+  status: 'pending' | 'approved';
+  created_at: string;
+  until?: string;
+}
+// Ce que la personne voit de sa dernière demande (page de connexion)
+export interface AccessRequestState { status: 'pending' | 'approved' | 'refused'; reason?: string; created_at?: string; until?: string }
+export interface PasswordResetRequest {
+  id: string;
+  user_id: string;
+  username: string;
+  name: string;
+  phone: string;
+  status: 'pending';
+  created_at: string;
+  note?: string; // description facultative du opérateur
+}
+
+export interface AppSettings {
+  chat_ephemeral_all_ms?: number; // messages éphémères de la discussion générale (M28.4) ; écrit par la route chat-ephemeral seulement
+  id: 'general';
+  news_publish?: { employee: 'off' | 'review' | 'direct'; team_lead: 'off' | 'review' | 'direct'; accountant: 'off' | 'review' | 'direct'; allow_edit: boolean }; // « Publications des équipes » : qui peut publier dans les Actualités (absent = seul le responsable)
+  price_per_million: number; // Ar pour 1M de score (sert encore aux pénalités automatiques)
+  price_per_mission: number; // Ar versés pour chaque mission validée (tarif fixe, quelle que soit la quantité)
+  client_price_default_ar?: number; // Ar payés par le client pour une mission validée (prix par défaut, 0 = pas encore réglé)
+  client_prices_by_type?: Record<string, number>; // exceptions : prix client par type de mission (clé = nom du type)
+  goal_missions?: number; // objectif du mois : missions validées (0 ou vide = pas d'objectif)
+  goal_profit_ar?: number; // objectif du mois : bénéfice net en Ar (admin seulement : jamais envoyé aux employés)
+  goal_max_expenses_ar?: number; // plafond de dépenses du mois en Ar (admin seulement)
+  signup_open?: boolean; // « Créer un compte » : false = l'admin a fermé les inscriptions (le serveur refuse les nouvelles demandes) ; absent = ouvertes
+  alert_unpaid_days?: number; // alerte « client qui n'a pas payé depuis X jours » (30 par défaut)
+  team_lead_limit_ar?: number; // plafond du Chef d'équipe (M15.6) : au-dessus de ce prix client, la décision revient au responsable ; 0 = pas de plafond ; admin seulement
+  alert_low_cash_ar?: number; // alerte « trésorerie basse » sous ce montant (0 par défaut = seulement si négative)
+  work_days?: number[];
+  perf_levels?: { names: string[]; mins: number[]; very_low: number }; // niveaux de performance : 4 noms, missions validées par mois pour les niveaux 2 à 4, seuil « très faible »
+  shift_mode?: 'both' | 'normal' | 'day' | 'night'; // « normal » : un seul horaire pour tous ; « day » / « night » : une seule vacation ; « both » : jour et nuit (défaut) // jours de travail : 0 = dimanche … 6 = samedi (défaut lundi à samedi)
+  day_shift_start: string; // HH:MM
+  day_shift_end: string;
+  night_shift_start: string;
+  night_shift_end: string;
+  late_tolerance_min: number; // tolérance de retard (calendrier)
+  access_before_min: number; // connexion permise X min avant le début du shift
+  access_after_min: number; // connexion permise X min après la fin du shift
+  show_activity_column: boolean; // colonne « Activité » sur la page Employés
+  pay_period?: 'month' | 'half'; // paie : mensuelle ou par quinzaine
+  advance_cap_pct?: number; // plafond des avances : % de ce qui est gagné dans la période (0 = pas de plafond)
+  advance_repay_pct?: number; // part de la paie qui peut servir à rembourser les avances (%)
+  pay_methods?: string[]; // modes de paiement proposés
+  auto_pen_enabled?: boolean; // pénalités automatiques (retards, absences) calculées dans la paie
+  auto_pen_late1_min?: number; auto_pen_late1_m?: number; // retard de X min = −Y M de score
+  auto_pen_late2_min?: number; auto_pen_late2_m?: number;
+  auto_pen_absent_m?: number; // absence non annoncée = −Y M de score
+  penalties_enabled?: boolean; // retenues / pénalités : désactivées par défaut
+  badge_start: boolean; // pastille « Début à valider »
+  badge_end: boolean; // pastille « Fin à valider »
+  badge_advance: boolean; // pastille « Avance à valider »
+  badge_profile: boolean; // pastille « Profil à valider »
+  badges_clickable: boolean; // un clic sur une pastille ouvre Validations
+  alert_idle_1_min: number; // 1re alerte « opérateur sans mission » (minutes)
+  alert_idle_2_min: number; // 2e alerte
+  err_report_enabled: boolean; // envoi automatique des erreurs au journal
+  err_max_per_session: number; // rapports automatiques maximum par session (quota d'appels)
+  err_hide_details: boolean; // cacher le détail technique aux opérateurs (ils voient seulement le numéro)
+  err_report_button: boolean; // bouton « Signaler un problème »
+  retry_seconds: number; // délai entre deux tentatives quand la connexion est perdue
+  maintenance_on: boolean; // site en maintenance (les opérateurs sont refusés, l'admin entre)
+  maintenance_message: string;
+  retention_days: number;
+  grid_columns?: number; // colonnes de la grille des missions (2 à 10)
+  rules: string;
+  post_types: string[];
+  monthly_plan?: MonthlyPlan; // revenus et paie prévus par mois (module 15, M15.4) ; admin seulement
+  team_goals?: TeamGoal[]; // objectifs par salarié et par équipe (module 15, M15.3) ; admin seulement
+  recurring_missions?: RecurringRule[]; // missions récurrentes (module 15, M15.1) ; admin seulement
+  auto_report?: AutoReportSetting; // rapport automatique (module 15, M15.5) : arrêté / chaque semaine / chaque mois ; admin seulement
+  work_types?: any[]; // module 26 (M26.6b) : types de travail créés par le responsable ; visibles du Chef d'équipe (pas d'argent)
+  mission_templates?: MissionTemplate[]; // modèles de mission (module 6, M6.2) ; admin seulement
+  performance?: import('../utils/performanceScore').PerformanceConfig; // Réglages de la performance (module 3) : le serveur revérifie tout
+  company?: CompanySettings; // Conditions de l'entreprise (module 0) : l'employé ne reçoit que le règlement et les congés
+  health_acks?: unknown[]; // marques « Ignorer / Vérifié » de la Santé du site, partagées entre appareils (admin seulement ; le serveur les revérifie)
+  stock_spaces?: { id: string; name: string }[]; // les stockages (Stockage 1, 2…) : admin seulement ; absent = un seul « Stockage 1 »
+  stock_categories?: string[]; // catégories des produits du Stockage (admin seulement ; le serveur les revérifie) ; absent = liste par défaut
+  budgets?: Record<string, number>; // plafond mensuel par catégorie de dépense, en Ar (module 4) : admin seulement, jamais envoyé à un opérateur
+  acct_close?: import('../utils/accounting').CloseState; // clôture de la comptabilité (M14.6) : écrite par le serveur seulement (route accounting-close), jamais envoyée à un opérateur
+  company_log?: CompanyLogEntry[]; // historique des changements des Conditions (écrit par le serveur, admin seulement)
+}
+
+/** Conditions de l'entreprise (module 0). Tout est facultatif ; rien n'est écrit en dur ailleurs dans le code. */
+export interface CompanySettings {
+  identity: { name: string; address: string; phone: string; email: string; logo_url: string; currency: string };
+  legal: { tax_id: string; register_id: string; notes: string[] };
+  tax: { vat_enabled: boolean; vat_rate: number; vat_exempt_text: string };
+  billing: { invoice_prefix: string; receipt_prefix: string; payment_days: number; late_penalty_text: string; payment_methods_text: string; invoice_footer: string };
+  payroll: { pay_day: number; pay_rounding: 'none' | '10' | '100' | '1000' };
+  leave: { leave_days_per_year: number; work_days_per_week: number; late_limit_time: string };
+  missions: { validation_hours: number; refusal_reason_required: boolean };
+  clients: { new_days: number; regular_missions: number; regular_months: number; strategic_top_pct: number; strategic_months: number; strategic_min_missions: number; inactive_days: number };
+  options: { invoice_per: 'client_month' | 'mission'; quotes_enabled: boolean; employee_sees_badges: boolean; employee_sees_attention: boolean; mission_requires_client: boolean; badges_enabled: boolean };
+  texts: { internal_rules: string; customer_terms: string };
+  modules: { hidden: string }; // pages cachées du menu (liste d'identifiants séparés par des virgules) ; les opérateurs la reçoivent aussi
+  watch: { validate_hours: number; active_no_end_hours: number; late_count: number; late_window_days: number; absent_streak_days: number; refusal_rate_pct: number; refusal_min_missions: number; min_periods: number; ignore_days: number; min_duration_minutes: number; advance_pending_days: number; inactive_days: number; strategic_silent_days: number; dormant_days: number; others_pct: number; backup_max_hours: number; error_hours: number }; // seuils de la Santé du site partagés par toute l'équipe d'admins ; 0 = valeur de départ
+  work: { business_model: string; pay_default: 'mission' | 'day' | 'hour' | 'piece' | 'fixed'; rate_day_ar: number; rate_hour_ar: number; rate_piece_ar: number; rate_fixed_ar: number; stock_gap_pct: number; stats_lines: 'money' | 'all' | 'none'; late_rule: 'never' | 'per_minute' | 'per_15'; absence_paid_sick: boolean; absence_paid_leave: boolean; absence_paid_none: boolean; absence_paid_other: boolean; sheet_reminder: 'on' | 'off'; sheet_reminder_hour: string }; // module 26 : types de travail et paie (jamais envoyé à un employé)
+}
+
+export interface CompanyLogEntry {
+  at: string; // date ISO, posée par le serveur
+  by: string; // id de l'admin
+  by_name: string;
+  path: string; // ex. « tax.vat_rate »
+  before: string; // valeur d'avant (coupée à 120 caractères)
+}
+
+export interface ProfileChangeRequest {
+  id: string;
+  user_id: string;
+  status: 'pending' | 'rejected';
+  reason?: string; // motif du refus (visible par le opérateur)
+  created_at: string;
+  old: { name: string; username: string; phone: string; avatar_url: string };
+  name: string;
+  username: string;
+  phone: string;
+  avatar_url: string;
+  note?: string; // description facultative du opérateur
+}
+
+export type UserRole = 'admin' | 'employee' | 'accountant' | 'team_lead';
+export type UserStatus = 'active' | 'blocked';
+export type ShiftType = 'day' | 'night';
+
+export interface User {
+  id: string;
+  username: string;
+  name: string;
+  role: UserRole;
+  status: UserStatus;
+  shift: ShiftType; // 'day' (08:00 - 18:00) or 'night' (20:00 - 06:00)
+  entry_only?: boolean; // module 26 (M26.7) : suivi par saisie seulement (sans compte ni téléphone) ; posé par le serveur à la création, jamais modifiable ensuite
+  pay_mode?: 'mission' | 'day' | 'hour' | 'piece' | 'fixed'; // module 26 : mode de paie de CET employé (absent = celui de l'entreprise, sinon « par mission »)
+  pay_rate_ar?: number; // module 26 : son tarif (par jour, heure ou pièce, ou salaire fixe) ; absent = celui de l'entreprise
+  is_online: boolean;
+  team?: string; // équipe (texte court, choisi par l'admin) : un Chef d'équipe valide les sessions des opérateurs de la même équipe
+  access_mode?: 'auto' | 'allow' | 'block'; // accès selon le shift : auto (défaut), toute heure, bloqué
+  force_logout_at?: string; // déconnexion forcée par le responsable : heure prévue
+  access_until?: string; // autorisation du responsable (demande hors horaires) : connexion permise jusqu'à cette heure
+  avatar_url: string;
+  phone: string;
+  cv_url?: string;
+  cv_data?: {
+    rank: string;
+    gameExperience: string;
+    kdRatio: string;
+    hardware: string;
+    joinedDate: string;
+    languages: string[];
+    specialty: string;
+  };
+  performance_badge: 'Top Booster' | 'Elite' | 'Standard' | 'Under Watch';
+  total_score_boosted: number;
+  total_earnings_ar: number;
+  pending_advance_ar: number;
+  hr?: import('../utils/hrFile').HrFile; // dossier du salarié (M5.1) : admin et salarié concerné seulement
+}
+
+export type PostStatus = 
+  | 'idle'
+  | 'pending_start'
+  | 'active'
+  | 'pending_end'
+  | 'completed'
+  | 'rejected'
+  | 'force_released';
+
+export interface PostSession {
+  id: string;
+  employee_id: string;
+  employee_name: string;
+  client_name: string;
+  account_tag: string;
+  target_score: number;
+  initial_score: number;
+  current_score: number;
+  final_score?: number;
+  remaining_score: number;
+  status: PostStatus;
+  shift_type: ShiftType;
+  date: string; // YYYY-MM-DD
+  start_time: string; // HH:MM:SS
+  end_time?: string; // HH:MM:SS
+  post_number?: number;
+  start_proof_url: string;
+  start_proof_urls?: string[]; // 1 to 5 proof photos
+  end_proof_url?: string;
+  end_proof_urls?: string[]; // 1 to 5 proof photos
+  rejection_reason?: string;
+  calculated_ar?: number; // 1M score = 1,000 Ar
+  client_price_ar?: number; // prix client figé à la validation (les anciennes missions : calculé au besoin)
+  client_id?: string; // fiche client (module 1) : jamais envoyé à un opérateur ; copié depuis la mission
+  notes?: string;
+  tasks_done?: string[]; // identifiants des tâches cochées de la mission (module 6, M6.3)
+  start_notes?: string; // description facultative du opérateur au début de session
+  admin_notes?: string; // description facultative de l'admin à la validation
+  /** Heures posées par le serveur (2026-11-01) : demande de début envoyée, début validé, fin envoyée, fin validée (ISO). Absentes des anciennes missions. */
+  start_sent_at?: string;
+  start_validated_at?: string;
+  end_sent_at?: string;
+  end_validated_at?: string;
+  demo?: boolean; // donnée de démonstration (supprimable dans Réglages)
+  created_at: string;
+  updated_at: string;
+  // Module 26 (types de travail) : seulement pour une ligne de production ou de présence saisie par quelqu'un d'autre (jamais pour une mission normale) ; absents = rien ne change
+  work_type?: string; // identifiant du type de travail (voir src/utils/workTypes.ts)
+  quantity?: number; // pièces ou boîtes faites
+  rejected?: number; // pièces refusées ou abîmées (non payées)
+  hours?: number; // heures travaillées
+  presence?: 'present' | 'late' | 'half' | 'absent';
+  entered_by?: string; // identifiant de celui qui a saisi (jamais celui qui valide)
+}
+
+export type ViolationType = 
+  | 'score_inversion'
+  | 'multi_post_attempt'
+  | 'out_of_shift_confinement'
+  | 'suspicious_screenshot';
+
+export interface SecurityViolation {
+  id: string;
+  employee_id: string;
+  employee_name: string;
+  violation_type: ViolationType;
+  description: string;
+  timestamp: string;
+  details: {
+    initial_score?: number;
+    attempted_score?: number;
+    active_post_id?: string;
+    client_name?: string;
+    user_agent?: string;
+  };
+  resolved: boolean;
+}
+
+export type AdvanceStatus = 'pending' | 'approved' | 'rejected';
+
+export interface SalaryAdvanceRequest {
+  id: string;
+  employee_id: string;
+  employee_name: string;
+  amount_ar: number;
+  reason: string;
+  request_date: string;
+  status: AdvanceStatus;
+  admin_notes?: string;
+  demo?: boolean;
+}
+
+export interface ChatMessage {
+  id: string;
+  sender_id: string;
+  sender_name: string;
+  sender_role: UserRole;
+  recipient_id?: string; // or 'all' / 'admin'
+  message: string;
+  timestamp: string;
+  attachment_url?: string;
+  attachment_name?: string;
+  attachment_kind?: 'image' | 'file';
+  album_id?: string; // photos envoyées ensemble (album)
+  edited_at?: string; // message modifié après envoi
+  pinned?: boolean; // épinglé en haut de la conversation
+  pinned_at?: string;
+  pinned_by?: string; pinned_by_name?: string; // qui a épinglé (responsable, chef d'équipe ou créateur du groupe peuvent épingler le message d'un autre : route chat-mark)
+  important_all?: { by: string; by_name: string; at: string }; // « Important pour tous » : posé par le responsable, un chef d'équipe ou le créateur du groupe (route chat-mark, jamais par la synchronisation)
+  reply_to?: { id: string; sender_name: string; text: string; has_attachment?: boolean }; // message cité (réponse)
+  deleted_at?: string; // supprimé pour tous : il ne reste qu'une trace
+  deleted_by?: 'sender' | 'admin';
+  sent_ms?: number; // heure d'envoi côté serveur (fenêtre de modification, coches « lu »)
+  reactions?: Record<string, string[]>; // réactions emoji : emoji → ids des personnes
+  forwarded?: { from: string }; // message transféré : nom de l'auteur d'origine
+  expires_ms?: number; // éphémère : heure de disparition calculée par le serveur à l'envoi (M28.4)
+  ephemeral_ms?: number; // durée du mode éphémère au moment de l'envoi
+  visible_to?: string[]; // « visible seulement par X » (M28.3) : le serveur ne l'envoie qu'à l'auteur, au responsable et à ces personnes
+  visible_names?: string[]; // leurs noms (écrits par le serveur)
+  send_at?: number; // message programmé : heure d'envoi (ms) ; le serveur le cache aux autres jusque-là
+  poll?: { question: string; kind?: 'poll' | 'date' | 'ack'; options: { id: string; text: string }[]; closed: boolean; votes?: Record<string, string | string[]>; counts?: Record<string, number>; my?: string | string[] }; // auteur : tous les votes ; autre participant : comptes + son vote (le serveur cache les noms) // sondage dans la discussion (messagerie S1) : les votes sont visibles de tous les participants
+}
+
+// Groupe de discussion créé par l'admin ou un opérateur (recipient_id des messages = id du groupe, « grp_… »)
+export interface ChatGroup {
+  id: string;
+  name: string;
+  owner_id: string;
+  members: string[];
+  admins?: string[]; // administrateurs du groupe (en plus du responsable)
+  avatar_url?: string; // photo du groupe
+  description?: string; // description (200 caractères max)
+  created_at?: string;
+  ephemeral_ms?: number; // messages éphémères du groupe (M28.4) : 1 h / 24 h / 7 jours ; écrit par le serveur seulement
+}
+
+// Jusqu'où une personne a lu une conversation (thread = id de l'autre personne, ou id du groupe)
+export interface ChatRead {
+  user_id: string;
+  thread: string;
+  ms: number;
+}
+
+export interface ClientContract {
+  id: string;
+  post_number: number; // numéro de la mission
+  client_name: string;
+  account_tag: string;
+  game_mode: string;
+  description?: string; // Description de la mission
+  post_type?: string; // Type de mission (un des types des réglages)
+  proof_mode?: 'type' | 'none' | 'photo' | 'note' | 'both'; // Justificatif demandé à la fin (avancé) : « type » = selon le type de mission
+  no_account?: boolean; // Mission sans compte : grisé, non réservable, rempli par l'admin
+  current_rank: string;
+  target_rank: string;
+  initial_score: number; // Début : modifiable par l'admin seulement
+  current_score?: number; // Actuel du compte (mis à jour à la validation d'une fin de session)
+  account_proof_urls?: string[]; // Preuves du compte client (5 photos max) : l'admin les gère, les opérateurs les voient
+  target_score: number;
+  recommended_shift: ShiftType | 'any';
+  estimated_reward_ar: number;
+  client_price_ar?: number; // prix client propre à cette mission (sinon : prix du type, sinon prix par défaut)
+  client_id?: string; // fiche client (module 1) ; les anciennes missions gardent leur texte libre `client_name` ; jamais envoyé à un opérateur
+  priority: 'Haute' | 'Normale' | 'Urgente';
+  due_date?: string; // date limite AAAA-MM-JJ (module 6, M6.1) ; facultative
+  due_time?: string; // heure limite HH:MM ; seulement avec une date
+  tasks?: { id: string; text: string }[]; // liste de tâches à cocher (module 6, M6.3), 20 au plus
+  tasks_required?: boolean; // vrai = tout doit être coché avant d'envoyer la mission
+  region_server: string;
+}
+
+export type DayStatus = 'objective_reached' | 'late' | 'absent' | 'no_post' | 'test' | 'in_progress' | 'leave';
+
+export interface DayCalendarRecord {
+  date: string; // YYYY-MM-DD
+  dayStatus: DayStatus;
+  shifts: PostSession[];
+  notes?: string;
+}
+
+export interface SearchResultItem {
+  id: string;
+  title: string;
+  subtitle: string;
+  category: 'employee' | 'date' | 'client';
+  dateStr?: string;
+  employeeId?: string;
+  clientName?: string;
+}
+
+// Demande d'inscription d'un nouveau opérateur (validée par l'admin)
+export interface SignupRequest {
+  id: string;
+  name: string;
+  username: string;
+  phone: string;
+  shift: ShiftType;
+  status: 'pending';
+  created_at: string;
+  note?: string; // description facultative du opérateur
+}
+
+// Présence d'un opérateur (signe de vie, temps de connexion du jour, file d'attente « sans mission »)
+// Arrivée d'un opérateur un jour donné (première connexion) et temps connecté
+export interface AttendanceRow {
+  user_id: string;
+  day: string;
+  first_seen: string;
+  last_seen: string;
+  online_sec: number;
+  /** Connexions du jour (serveur v52+) : `in` = connexion, `last` = dernier signe de vie, `out` = déconnexion volontaire. Absent sur les anciens jours. */
+  sessions?: { in: string; last: string; out?: string }[];
+}
+
+export interface PresenceRow {
+  user_id: string;
+  last_seen: string;
+  day: string;
+  online_sec: number;
+  waiting_since: string | null;
+}
+export interface QueueInfo {
+  waiting_since: string;
+  position: number;
+  total: number;
+}
+
+// Fil d'actualité : publications du responsable, avec « J'adore », commentaires et partages
+export interface NewsComment {
+  id: string;
+  user_id: string;
+  user_name: string;
+  role: UserRole;
+  text: string;
+  files?: NewsAttachment[];
+  reactions?: Record<string, string[]>; // réactions emoji : emoji → ids des personnes
+  parent_id?: string; // réponse : identifiant du commentaire de premier niveau (2 niveaux au plus, comme Facebook)
+  reply_to_name?: string; // nom de la personne à qui on répond (affiché « @nom »)
+  created_at: string;
+}
+
+// Pièce jointe d'une publication ou d'un commentaire (photo compressée, PDF, texte)
+export interface NewsAttachment {
+  url: string;
+  name: string;
+  kind: 'image' | 'file';
+  size?: number; // octets
+}
+
+export type NewsStatus = 'published' | 'pending' | 'rejected';
+
+export interface NewsPost {
+  id: string;
+  author_id: string;
+  author_name: string;
+  title: string;
+  text: string;
+  created_at: string;
+  pinned: boolean;
+  loves: string[]; // ids des personnes qui ont mis « J'adore »
+  comments: NewsComment[];
+  shares: number;
+  files?: NewsAttachment[];
+  author_role?: UserRole;
+  status?: NewsStatus; // absent = publiée (anciennes publications)
+  reject_reason?: string;
+  submitted_at?: string;
+  files_removed?: number; // fichiers supprimés au refus
+  audience?: ('employee' | 'team_lead' | 'accountant')[]; // qui peut voir la publication (absent = tout le monde ; le responsable et l'auteur voient toujours)
+  audience_users?: string[]; // personnes choisies une à une (en plus des rôles entiers de « audience ») ; absent = personne en particulier
+  edited_at?: string; // dernière modification du texte, du titre ou du public (une publication déjà publiée)
+  poll?: { question: string; kind?: 'poll' | 'date' | 'ack'; options: { id: string; text: string }[]; closed: boolean; counts?: Record<string, number>; my?: string | string[]; votes?: Record<string, string | string[]> }; // sondage (étape C2) : tout le monde reçoit les comptes + son vote ; `votes` (qui a voté quoi) seulement le responsable
+}
+
+/** Fiche client (module 1) : visible par l'admin seulement. Le statut n'est jamais stocké : il se calcule (src/utils/clients.ts). */
+export interface Client {
+  id: string;
+  name: string; // raison sociale
+  contact_name?: string;
+  phone?: string;
+  email?: string;
+  address?: string;
+  note?: string;
+  payment_terms_days?: number; // échéance de ce client (sinon celle de la page Conditions)
+  price_default_ar?: number; // tarif propre à ce client
+  price_by_type?: Record<string, number>; // exceptions par type de mission
+  active?: boolean; // false = archivé (un client qui a des missions n'est jamais supprimé)
+  created_by?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+/** Une ligne d'argent (finances) : entrée (paiement d'un client…) ou sortie (dépense). Visible par l'admin seulement. */
+export type CashKind = 'in' | 'out';
+export interface CashEntry {
+  id: string;
+  kind: CashKind;
+  category: string;
+  amount_ar: number;
+  date: string; // AAAA-MM-JJ
+  note: string;
+  client_name?: string;
+  mission_id?: string;
+  supplier_id?: string; // fournisseur d'un achat (module 4)
+  po_id?: string; // bon de commande qui a créé cette dépense (module 4)
+  invoice_id?: string; // facture payée par cette ligne (module 2)
+  void_of?: string; // M23.3 : cette ligne de correction annule le paiement qui porte cet id (jamais de suppression)
+  receipt_no?: string; // numéro de reçu attribué par le serveur (module 2)
+  payment_method?: string; // espèces, virement, mobile money…
+  created_by?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+// Stock (responsable seulement, comme les finances). La quantité en stock n'est JAMAIS saisie : elle se calcule avec les mouvements.
+export interface Product {
+  id: string;
+  name: string;
+  category: string;
+  unit: string; // « unité », « kg », « boîte »…
+  buy_price_ar: number; // prix d'achat par unité
+  sell_price_ar: number; // prix de vente par unité
+  alert_threshold: number; // voyant rouge quand la quantité est à ce nombre ou en dessous (0 = pas d'alerte)
+  photo_url?: string; // photo du produit (Cloudinary), vide = pas de photo
+  storage_id?: string; // stockage où se trouve le produit (absent = le premier stockage) ; un produit n'est que dans un stockage
+  created_by?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+export type StockMoveType = 'in' | 'out' | 'adjust';
+export interface StockMove {
+  id: string;
+  product_id: string;
+  type: StockMoveType; // in = entrée (+), out = sortie (−), adjust = ajustement (+ ou −, pour corriger après un comptage)
+  qty: number; // in/out : toujours > 0 ; adjust : positif ou négatif, jamais 0
+  date: string; // AAAA-MM-JJ
+  note: string;
+  unit_cost_ar?: number; // entrée seulement : prix payé par unité (facultatif)
+  cash_id?: string; // dépense « Achats » créée avec cette entrée (S3.3)
+  supplier_id?: string; // fournisseur de cette entrée (module 4)
+  po_id?: string; // bon de commande reçu (module 4)
+  reason?: 'inventory'; // ajustement fait après un comptage physique (module 4)
+  counted_qty?: number; // inventaire : quantité comptée
+  expected_qty?: number; // inventaire : quantité que le stock indiquait
+  created_by?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+// ---------- Facturation (module 2, responsable seulement) ----------
+export type InvoiceStatus = 'draft' | 'issued' | 'cancelled'; // en retard / partiellement payée / payée se CALCULENT (voir src/utils/invoices.ts)
+export interface InvoiceLine {
+  id: string;
+  description: string;
+  qty: number; // jusqu'à 2 décimales
+  unit_price_ar: number;
+  total_ar: number; // qty × prix, arrondi à l'Ar
+  refs?: string[]; // identifiants des sessions de mission facturées par cette ligne
+}
+export interface InvoiceParty { name: string; address?: string; contact_name?: string; email?: string; phone?: string; tax_id?: string; register_id?: string }
+export interface Invoice {
+  id: string;
+  type?: 'invoice' | 'credit_note'; // « avoir » : annule une facture émise
+  number?: string; // attribué par le serveur à l'émission (jamais pour un brouillon)
+  status: InvoiceStatus;
+  client_id: string;
+  client: InvoiceParty; // copie du client AU MOMENT de l'émission : un document émis ne change plus
+  issuer?: InvoiceParty; // copie de l'entreprise à l'émission
+  issue_date: string;
+  due_date: string;
+  lines: InvoiceLine[];
+  subtotal_ar: number;
+  tax_rate: number;
+  tax_ar: number;
+  total_ar: number;
+  note?: string;
+  credit_of?: string; // avoir : identifiant de la facture annulée
+  cancelled_by?: string; // facture annulée : identifiant de l'avoir
+  issued_at?: string;
+  created_by?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+// Devis (module 2, M2.9, facultatif : réglage « Devis activés »). Mêmes lignes qu'une facture ; Brouillon (modifiable) → Envoyé (figé) → Accepté ou Refusé.
+// « Facturé » n'est pas un état saisi : un devis accepté dont `invoice_id` existe. Aucun total n'est saisi : le serveur recalcule tout.
+export type QuoteStatus = 'draft' | 'sent' | 'accepted' | 'refused';
+export interface Quote {
+  id: string;
+  ref: string; // DV-0001, attribué à la création
+  status: QuoteStatus;
+  client_id: string;
+  client?: { name: string }; // copie du nom au moment de l'envoi
+  date: string;
+  valid_until?: string; // fin de validité (facultatif)
+  lines: InvoiceLine[];
+  subtotal_ar: number;
+  tax_rate: number;
+  tax_ar: number;
+  total_ar: number;
+  note?: string;
+  invoice_id?: string; // facture brouillon créée à partir de ce devis accepté
+  created_by?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+// Fournisseurs, bons de commande, inventaire et budgets (module 4, responsable seulement, comme le stock et les finances).
+export interface Supplier {
+  id: string;
+  name: string;
+  contact: string; // téléphone, e-mail ou nom : texte libre
+  lead_days?: number; // délai habituel de livraison (jours), vide = inconnu
+  note: string;
+  active: boolean; // faux = archivé (jamais supprimé s'il a servi)
+  created_by?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+export type PurchaseStatus = 'draft' | 'ordered' | 'received' | 'cancelled';
+export interface PurchaseLine {
+  product_id: string;
+  qty: number; // commandé
+  unit_cost_ar: number; // prix convenu par unité
+  received_qty: number; // déjà reçu (réception partielle possible)
+}
+export interface PurchaseOrder {
+  id: string;
+  ref: string; // « BC-0001 »
+  supplier_id: string;
+  date: string; // AAAA-MM-JJ, date de la commande
+  expected_date?: string; // livraison prévue
+  status: PurchaseStatus; // Brouillon → Commandé → Reçu, ou Annulé
+  short_closed?: string; // AAAA-MM-JJ : bon « Reçu » soldé alors qu'une partie n'est jamais arrivée (le reste est abandonné)
+  lines: PurchaseLine[]; // figées une fois commandé : seule la quantité reçue avance
+  note: string;
+  created_by?: string;
+  created_at?: string;
+  updated_at?: string;
+}

@@ -1,0 +1,15 @@
+import { readFileSync } from 'node:fs';
+const r = (f: string) => readFileSync(f, 'utf8');
+const chat = r('src/components/ChatView.tsx'), ass = r('src/components/AssistantChat.tsx'), css = r('src/index.css'), hook = r('src/utils/useKeepBottom.ts');
+let bad = 0; const ok = (c: boolean, m: string) => { if (!c) { bad++; console.log('✗', m); } else console.log('✓', m); };
+ok(/visualViewport/.test(hook) && /ResizeObserver/.test(hook), 'hook écoute le clavier (visualViewport + ResizeObserver)');
+ok(/onFocus=\{keep\.pin\}/.test(chat), 'ChatView : focus du champ => dernier message gardé en bas');
+ok(/keep\.pin\(\)/.test(ass), 'Assistant : focus du champ => dernier message gardé en bas');
+ok(/chat-wallpaper-light/.test(chat) && /chat-wallpaper-dark/.test(chat), 'ChatView : fond à deux couches');
+ok(/chat-wallpaper-light/.test(ass), 'Assistant : fond à deux couches');
+ok(/\.chat-wallpaper-light[^}]*linear-gradient/.test(css) && /\.chat-wallpaper-dark[^}]*svg\+xml/.test(css), 'CSS : motif + dégradé, clair et sombre');
+ok(/data-press-clone/.test(chat) && /menuHtml/.test(chat), 'Appui long : message copié net au-dessus du fond');
+const sb = r('src/components/Sidebar.tsx'), tb = r('src/components/TopBar.tsx');
+ok(/MOVED_TO_HEADER = \['feed', 'chat', 'messages'\]/.test(sb) && /'!hidden'/.test(sb), 'tous les écrans : Actualités et Messages retirés du menu latéral');
+ok(/data-header-shortcuts/.test(tb) && !/hidden lg:flex items-center gap-2 shrink-0" data-header-shortcuts/.test(tb) && /data-header-shortcut=/.test(tb) && /onNavigate\(view\)/.test(tb) && /chatUnread/.test(tb), 'grand écran : Actualités et Messages dans l\'en-tête, avec la pastille des messages non lus');
+process.exit(bad ? 1 : 0);

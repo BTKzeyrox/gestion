@@ -1,0 +1,129 @@
+// Guide interactif (visite guidée, module 16 revu le 2026-10-29) : règles pures, sans écran, sans serveur. Contrôlé par `npm run check:guide-tour`.
+// Le guide ouvre la VRAIE page, assombrit le reste et fait clignoter un contour autour de l'élément à regarder. Toucher l'élément lance une petite SIMULATION :
+// rien n'est modifié, une bulle montre seulement ce qui se passerait.
+import type { Bi } from './siteKnowledge';
+
+export type GuideRole = 'admin' | 'employee' | 'accountant' | 'team_lead';
+
+/** Quoi faire clignoter : un repère `data-tour="…"` posé dans l'application, ou le texte (français ou anglais) d'un bouton, d'un onglet ou d'un titre. */
+export interface GuideTarget { tour?: string; texts?: Bi[] }
+/** La simulation : `hint` dit quoi toucher ; `result` montre ce qui se passerait. Aucune donnée n'est modifiée. */
+export interface GuideAction { hint: Bi; result: Bi }
+export interface GuideStep {
+  id: string;
+  /** Identifiant de la page du menu à ouvrir (null = écran de bienvenue, sans page). */
+  page: string | null;
+  /** Page « stats » : ouvrir l'onglet Finances (Argent > Finances dans le nouveau menu). */
+  statsTab?: 'finance';
+  target: GuideTarget | null;
+  title: Bi;
+  text: Bi;
+  action?: GuideAction;
+  /** Dit quoi faire quand l'élément n'est pas là (par exemple : aucune mission pour le moment). */
+  missing?: Bi;
+}
+
+/** Texte comparé sans accents, sans majuscules et sans espaces en trop. */
+export const norm = (s: unknown): string => String(s ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
+
+export interface Box { left: number; top: number; width: number; height: number }
+export interface ElLike { textContent: string | null; getBoundingClientRect(): Box; closest?(selector: string): unknown }
+export interface RootLike { querySelectorAll(selector: string): ArrayLike<ElLike> }
+
+/** Ce qui peut porter le texte cherché. */
+export const TEXT_SELECTOR = 'button, a, [role="tab"], [role="button"], h1, h2, h3, summary, label';
+/** Les éléments du guide lui-même (la bulle, le cadre) ne sont jamais visés : leur texte contient souvent le mot cherché. */
+export const GUIDE_UI_SELECTOR = '[data-guide-ui]';
+const isGuideUi = (el: ElLike): boolean => typeof el.closest === 'function' && !!el.closest(GUIDE_UI_SELECTOR);
+export interface View { width: number; height: number }
+/** Visible = pas dans le guide, pas dans une zone cachée, de taille non nulle ET au moins la moitié de sa surface DANS la fenêtre (un menu fermé, poussé hors de l'écran, n'est pas visible). */
+const isVisible = (el: ElLike, view?: View): boolean => {
+  if (isGuideUi(el)) return false;
+  if (typeof el.closest === 'function' && el.closest('[aria-hidden="true"], [inert]')) return false;
+  const r = el.getBoundingClientRect();
+  if (!(r.width > 0 && r.height > 0)) return false;
+  if (!view) return true;
+  const w = Math.min(r.left + r.width, view.width) - Math.max(r.left, 0);
+  const h = Math.min(r.top + r.height, view.height) - Math.max(r.top, 0);
+  return w > 0 && h > 0 && (w * h) / (r.width * r.height) >= 0.5;
+};
+const inMain = (el: ElLike): boolean => typeof el.closest === 'function' && !!el.closest('main, [role="main"]');
+
+/** Trouve l'élément à faire clignoter : d'abord le repère `data-tour` (le premier visible), sinon le texte le plus précis (égal d'abord, puis le plus court, le contenu de la page avant les menus). `view` = la taille de la fenêtre : un élément hors écran n'est jamais choisi. */
+export function findTarget(root: RootLike, target: GuideTarget | null | undefined, view?: View): ElLike | null {
+  if (!target) return null;
+  if (target.tour && /^[a-z0-9-]+$/.test(target.tour)) {
+    const list = root.querySelectorAll(`[data-tour="${target.tour}"]`);
+    for (let i = 0; i < list.length; i++) if (isVisible(list[i], view)) return list[i];
+  }
+  if (target.texts && target.texts.length) {
+    const wanted = target.texts.flatMap(b => [b.fr, b.en]).map(norm).filter(x => x.length >= 3);
+    const list = root.querySelectorAll(TEXT_SELECTOR);
+    let best: ElLike | null = null, bestScore = Infinity;
+    for (let i = 0; i < list.length; i++) {
+      const el = list[i];
+      const txt = norm(el.textContent);
+      if (!txt || !isVisible(el, view)) continue;
+      for (const w of wanted) {
+        if (!txt.includes(w)) continue;
+        const score = (txt === w ? 0 : 1000) + txt.length + (inMain(el) ? 0 : 5000); // le texte le plus exact et le plus court gagne ; le contenu de la page passe avant les menus
+        if (score < bestScore) { best = el; bestScore = score; }
+      }
+    }
+    return best;
+  }
+  return null;
+}
+
+/** Le cadre qui clignote : un peu plus grand que l'élément, mais jamais hors de l'écran. */
+export function holeBox(r: Box, vw: number, vh: number, pad = 6): Box {
+  const left = Math.max(2, r.left - pad), top = Math.max(2, r.top - pad);
+  const right = Math.min(vw - 2, r.left + r.width + pad), bottom = Math.min(vh - 2, r.top + r.height + pad);
+  return { left, top, width: Math.max(0, right - left), height: Math.max(0, bottom - top) };
+}
+
+/** Où poser la bulle d'explication : du côté OPPOSÉ à l'élément (jamais dessus). Pas d'élément : EN BAS (la vraie page reste visible) ; au centre seulement pour l'écran de bienvenue (`welcome`). */
+export function bubbleDock(hole: Box | null, vh: number, welcome = false): 'top' | 'bottom' | 'center' {
+  if (!hole) return welcome ? 'center' : 'bottom';
+  return hole.top + hole.height / 2 > vh / 2 ? 'top' : 'bottom';
+}
+
+// ---- Lecteur « vidéo courte » (M20.3) ----
+export const SCENE_MIN_MS = 4000;
+export const SCENE_MAX_MS = 7000;
+/** Durée d'une scène : le temps de lire (40 ms par lettre) + 3 s, plus 1,5 s s'il y a une simulation ; entre 4 et 7 secondes. */
+export function sceneDuration(step: Pick<GuideStep, 'text' | 'title' | 'action'>, lang: 'fr' | 'en' = 'fr'): number {
+  const chars = String((lang === 'en' ? step.text.en : step.text.fr) ?? '').length + (step.action ? String(lang === 'en' ? step.action.result.en : step.action.result.fr).length / 2 : 0);
+  const ms = 3000 + Math.round(chars * 40) + (step.action ? 1500 : 0);
+  return Math.max(SCENE_MIN_MS, Math.min(SCENE_MAX_MS, ms));
+}
+export interface SceneEvent { at: number; kind: 'finger' | 'tap' | 'result' | 'end' }
+/** La suite d'une scène, en millisecondes depuis son début : le doigt part, touche, le résultat apparaît, puis la scène finit. Sans simulation : seulement la fin. */
+export function sceneEvents(step: Pick<GuideStep, 'action'>, durationMs: number): SceneEvent[] {
+  const end: SceneEvent = { at: durationMs, kind: 'end' };
+  if (!step.action) return [end];
+  const tap = Math.min(2600, Math.max(1800, Math.round(durationMs * 0.4)));
+  return [{ at: 700, kind: 'finger' }, { at: tap, kind: 'tap' }, { at: tap + 250, kind: 'result' }, end];
+}
+
+// ---- Validité d'un guide (contrôlée par check:guide-tour) ----
+export interface GuideProblem { role: string; step: string; problem: string }
+export function guideProblems(role: string, steps: GuideStep[]): GuideProblem[] {
+  const out: GuideProblem[] = [];
+  const seen = new Set<string>();
+  const bi = (b: Bi | undefined) => !!b && typeof b.fr === 'string' && b.fr.trim().length > 0 && typeof b.en === 'string' && b.en.trim().length > 0;
+  if (steps.length < 4) out.push({ role, step: '-', problem: 'moins de 4 étapes' });
+  steps.forEach((s, i) => {
+    const p = (problem: string) => out.push({ role, step: s.id || String(i), problem });
+    if (!s.id || seen.has(s.id)) p('identifiant vide ou en double'); seen.add(s.id);
+    if (!bi(s.title)) p('titre FR/EN manquant');
+    if (!bi(s.text)) p('texte FR/EN manquant');
+    if (i === 0 && (s.page !== null || s.target !== null)) p('la première étape est la bienvenue : sans page ni élément');
+    if (i > 0 && s.page === null) p('une étape après la bienvenue doit ouvrir une page');
+    if (s.target && !s.target.tour && !(s.target.texts && s.target.texts.length)) p('élément à viser vide');
+    if (s.target && s.target.texts && s.target.texts.some(b => !bi(b))) p('texte à viser sans FR/EN');
+    if (s.action) { if (!s.target) p('simulation sans élément à toucher'); if (!bi(s.action.hint) || !bi(s.action.result)) p('simulation sans texte FR/EN'); if (!s.missing) p('simulation sans texte « élément absent »'); }
+    if (s.target && !s.missing) p('élément visé sans texte « élément absent »');
+  });
+  return out;
+}

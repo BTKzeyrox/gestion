@@ -1,0 +1,146 @@
+// État de la connexion : pastille du header (hors ligne, envoi, à revoir, copie verrouillée, tout est envoyé) et relance automatique des envois.
+// Utilisé par : App.tsx et TopBar.tsx. Contrôlé par : npm run check:header-status.
+// Pour modifier : le bandeau jaune du bas est retiré, ConnectionBanner ne rend rien mais relance les envois (useConnectionModel(true)). Les textes viennent de bannerModel (utils/offlineText.ts).
+import { syncLive } from '../utils/unsentCopy';
+import React, { useEffect, useRef, useState } from 'react';
+import { WifiOff, CheckCircle2, Send, AlertTriangle, Lock } from 'lucide-react';
+import { db } from '../db/store';
+import { useApp } from '../context/AppContext';
+import { bannerModel } from '../utils/offlineText';
+import { openOfflineCenter } from './OfflineCenter';
+import { Avatar } from './Avatar';
+
+// État de la connexion, partagé entre le composant invisible du bas (qui relance les envois ; son bandeau jaune est retiré) et la pastille du header (tous les états :
+// « Hors ligne », « Envoi en cours », « À revoir », « Copie verrouillée », puis « Tout est envoyé »). Un seul modèle, choisi par `bannerModel` (offlineText.ts).
+// `withCountdown` : seul le composant du bas fait le compte à rebours et relance l'envoi (sinon la pastille doublerait les tentatives).
+export function useConnectionModel(withCountdown: boolean) {
+  const { lang } = useApp();
+  const [down, setDown] = useState(false);
+  const [left, setLeft] = useState(0);
+  const [, force] = useState(0);
+  const [done, setDone] = useState(false);
+  const retry = Math.max(5, Math.round(db.getSettings().retry_seconds || 15));
+  const hadWork = useRef(false); // il y a eu du travail en attente ou une coupure : on dira « Tout est envoyé » une fois
+  const sinceMs = useRef<number | null>(null); // depuis quand des éléments restent non envoyés alors que le réseau est là
+
+  useEffect(() => db.onConnection(setDown), []);
+  useEffect(() => db.subscribe(() => force(n => n + 1)), []);
+  useEffect(() => {
+    const off = () => setDown(true);
+    const on = () => { if (withCountdown) db.retryNow(); };
+    window.addEventListener('offline', off);
+    window.addEventListener('online', on);
+    return () => {
+      window.removeEventListener('offline', off);
+      window.removeEventListener('online', on);
+    };
+  }, [withCountdown]);
+  // Le compteur se rafraîchit chaque seconde (la comparaison des données est limitée à une fois par 0,75 s dans le magasin)
+  useEffect(() => { const id = setInterval(() => force(n => n + 1), 1000); return () => clearInterval(id); }, []);
+  useEffect(() => {
+    if (!down || !withCountdown) return;
+    setLeft(retry);
+    const timer = setInterval(() => {
+      setLeft(l => {
+        if (l <= 1) {
+          if (!db.isDemoCut()) db.retryNow(); // coupure simulée en démo : pas de vraie tentative
+          return retry;
+        }
+        return l - 1;
+      });
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [down, retry, withCountdown]);
+
+  const st = db.getOfflineStatus();
+  const un = db.getUnsent();
+  const isDown = down || db.isDemoCut();
+  if (un.count > 0 || isDown) hadWork.current = true;
+  if (!isDown && un.count > 0) { if (sinceMs.current === null) sinceMs.current = Date.now(); } else sinceMs.current = null;
+  const pendingSecs = sinceMs.current === null ? 0 : (Date.now() - sinceMs.current) / 1000;
+  const allSent = !isDown && un.count === 0 && st.review.length === 0 && hadWork.current;
+  // « Tout est envoyé » : montré 4 secondes, une seule fois
+  useEffect(() => {
+    if (!allSent) return;
+    hadWork.current = false;
+    setDone(true);
+    const id = setTimeout(() => setDone(false), 4000);
+    return () => clearTimeout(id);
+  }, [allSent]);
+
+  const m = bannerModel({
+    down: isDown, unsent: un.count, review: st.review.length, kept: st.enabled && !st.problem, needsCode: st.needs_code, locked: st.locked, canOffline: st.can_offline,
+    pendingSecs, justDone: done,
+  }, lang);
+  return { m, un, st, isDown, left, setLeft, retry, lang };
+}
+
+/** Le bandeau jaune du bas (« Hors ligne », explication, compte à rebours, « Réessayer ») est RETIRÉ (2026-10-29, demande de BTK). Le composant reste monté dans App.tsx
+ *  parce que `useConnectionModel(true)` fait le travail invisible : la relance automatique des envois (toutes les `retry_seconds` secondes) et la relance au retour du réseau.
+ *  L'état hors ligne reste visible dans la pastille du header (ConnectionChip), qui ouvre le centre hors ligne. */
+export const ConnectionBanner: React.FC = () => {
+  const { un } = useConnectionModel(true);
+  // Filet de sécurité : le texte de ce qui est envoyé sans copie protégée est gardé à part pour être rendu si la page se recharge (utils/unsentCopy.ts, components/UnsentRecovery.tsx)
+  const sig = un.items.map(i => i.key + (i.kept ? '1' : '0') + (i.text || '').length).join('|');
+  useEffect(() => { syncLive(db.getCurrentUser()?.id, un.items); }, [sig]); // eslint-disable-line react-hooks/exhaustive-deps
+  return null;
+};
+
+/** Pastille du header : l'état de l'envoi en un coup d'œil, tous états confondus ; la toucher ouvre le centre « hors ligne ». */
+export const ConnectionChip: React.FC = () => {
+  const { m, un, st, lang } = useConnectionModel(false);
+  const t = (fr: string, en: string) => (lang === 'en' ? en : fr);
+  if (!m.kind) return null;
+  const n = m.kind === 'review' ? st.review.length : m.kind === 'offline' || m.kind === 'sending' ? un.count : 0;
+  const look = {
+    offline: { cls: 'bg-amber-950 border-amber-500/70 text-amber-100', Icon: WifiOff, ic: 'text-amber-400', label: t('Hors ligne', 'Offline') },
+    sending: { cls: 'bg-blue-950 border-blue-500/70 text-blue-100', Icon: Send, ic: 'text-blue-400', label: t('Envoi en cours', 'Sending') },
+    review: { cls: 'bg-amber-950 border-amber-500/70 text-amber-100', Icon: AlertTriangle, ic: 'text-amber-400', label: t('À revoir', 'To review') },
+    locked: { cls: 'bg-slate-800 border-slate-500/70 text-slate-100', Icon: Lock, ic: 'text-slate-300', label: t('Copie verrouillée', 'Copy locked') },
+    done: { cls: 'bg-emerald-950 border-emerald-500/70 text-emerald-100', Icon: CheckCircle2, ic: 'text-emerald-400', label: t('Tout est envoyé', 'Everything is sent') },
+  }[m.kind];
+  const { Icon } = look;
+  const openIt = () => openOfflineCenter(m.kind === 'review' ? 'review' : un.count > 0 || st.locked || st.review.length === 0 ? 'pending' : 'review');
+  const body = (
+    <>
+      <Icon className={`w-4 h-4 shrink-0 ${look.ic} ${m.kind === 'sending' ? 'animate-pulse' : ''}`} aria-hidden="true" />
+      <span className="hidden min-[460px]:inline whitespace-nowrap">{look.label}</span>
+      {n > 0 && <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-white/15 text-[11px] leading-[18px] text-center font-bold">{n}</span>}
+    </>
+  );
+  const box = `shrink-0 h-9 px-2.5 relative after:absolute after:-inset-1.5 after:content-[''] rounded-full border flex items-center gap-1.5 text-xs font-bold ${look.cls}`;
+  const title = `${m.text}${m.hint ? ' : ' + m.hint : ''}`;
+  if (m.kind === 'done') return <span role="status" aria-live="polite" title={title} className={box} data-testid="chip-done">{body}</span>;
+  return <button type="button" onClick={openIt} title={title} aria-label={title} className={`${box} cursor-pointer`} data-testid={`chip-${m.kind}`}>{body}</button>;
+};
+
+/** Profil en haut du menu latéral (téléphone) : grande photo ronde dont le contour montre l'état de l'envoi (hors ligne, envoi, à revoir, tout est envoyé), sinon « En ligne ». */
+export const SidebarProfile: React.FC<{ name: string; avatar?: string; role?: string; light: boolean; onOpen: () => void }> = ({ name, avatar, role, light, onOpen }) => {
+  const { m, un, st, lang } = useConnectionModel(false);
+  const t = (fr: string, en: string) => (lang === 'en' ? en : fr);
+  const n = m.kind === 'review' ? st.review.length : m.kind === 'offline' || m.kind === 'sending' ? un.count : 0;
+  const look = ({
+    offline: { ring: 'border-amber-500', txt: t('Hors ligne', 'Offline'), cls: 'bg-amber-100 text-amber-800' },
+    sending: { ring: 'border-blue-500', txt: t('Envoi en cours', 'Sending'), cls: 'bg-blue-100 text-blue-800' },
+    review: { ring: 'border-amber-500', txt: t('À revoir', 'To review'), cls: 'bg-amber-100 text-amber-800' },
+    locked: { ring: 'border-slate-500', txt: t('Copie verrouillée', 'Copy locked'), cls: 'bg-slate-200 text-slate-800' },
+    done: { ring: 'border-emerald-500', txt: t('Tout est envoyé', 'Everything is sent'), cls: 'bg-emerald-100 text-emerald-800' },
+  } as Record<string, { ring: string; txt: string; cls: string }>)[m.kind || ''] || { ring: 'border-emerald-500', txt: t('En ligne', 'Online'), cls: 'bg-emerald-100 text-emerald-800' };
+  const openIt = () => openOfflineCenter(m.kind === 'review' ? 'review' : 'pending');
+  return (
+    <div className="md:hidden flex flex-col items-center gap-2 px-4 pt-3 pb-2" data-sidebar-profile>
+      <button type="button" onClick={onOpen} title="Mon profil" aria-label="Mon profil" data-sidebar-avatar data-status-kind={m.kind || 'online'} className={`rounded-full p-1 border-4 ${look.ring} cursor-pointer`}>
+        <Avatar src={avatar} name={name} className="w-24 h-24 rounded-full" />
+      </button>
+      <div className="text-center min-w-0 max-w-full">
+        <div className={`font-extrabold truncate ${light ? 'text-slate-900' : 'text-white'}`}>{name}</div>
+        {role && <div className="text-xs text-slate-400">{role}</div>}
+      </div>
+      {m.kind && m.kind !== 'done' ? (
+        <button type="button" onClick={openIt} data-sidebar-status className={`px-3 py-1 rounded-xl text-xs font-bold cursor-pointer ${look.cls}`}>{look.txt}{n > 0 ? ` · ${n}` : ''}</button>
+      ) : (
+        <span data-sidebar-status className={`px-3 py-1 rounded-full text-xs font-bold ${look.cls}`}>{look.txt}</span>
+      )}
+    </div>
+  );
+};
