@@ -25,6 +25,13 @@
 | 8 | Guide complet de copie et de passation | `NOUVEAU_PROJET.md`, `HANDOVER.md` § 0 bis |
 | 9 | `df-api` : 1re tranche du découpage (bloc TOTP dans `totp.ts`) | `supabase/functions/df-api/totp.ts` |
 
+## 2 bis. CE DÉPÔT (`BTKzeyrox/gestion`) est la copie n° 1 de Nprojet (2026-11-19)
+Les textes `.md` ci-dessous parlent encore de Nprojet : c'est voulu (copie identique, **seuls les comptes changent**, décision de BTK). Les comptes de ce dépôt : `site.config.json` (Supabase `blvuwirzmtmlehafnvew`, même Cloudinary que Nprojet, dépôt `BTKzeyrox/gestion`).
+- **Décisions de BTK** : base **vide** (aucune donnée de Nprojet) ; un seul compte admin, pseudo `admin`, mot de passe donné par BTK dans le chat (**à changer à la première connexion** ; jamais écrit dans le dépôt) ; même GitHub, même Vercel, autre Supabase.
+- **Fait** : dépôt créé (2 commits : copie pure, puis comptes) ; `supabase/setup-complete.sql` généré (`npm run setup:sql`) et lancé par BTK dans le SQL Editor du nouveau Supabase (la 5e tâche planifiée est apparue) ; SQL du compte admin donné à BTK.
+- **Reste** : (a) vérifier la base (44 tables avec RLS, 5 tâches dans `cron.job`, secret `df_project_url` = adresse du nouveau projet) ; (b) lancer le SQL du compte admin (`npm run admin:sql` le refait) ; (c) secrets Cloudinary / Resend dans le coffre-fort (`NOUVEAU_PROJET.md` § 2) ; (d) envoyer le serveur : `SUPABASE_ACCESS_TOKEN=sbp_… npm run deploy:server -- --confirm-ref blvuwirzmtmlehafnvew` (3 fonctions, tous les fichiers de `df-api`) ; (e) projet Vercel relié à `BTKzeyrox/gestion` (Vite, aucune variable) ; (f) contrôle final (`NOUVEAU_PROJET.md` § 7). Cocher ici ce qui est fait.
+- **Limite** : l'IA de la session n'a pas accès au Supabase `blvuwirzmtmlehafnvew` (autre compte, réseau bloqué) : le SQL se lance à la main dans le SQL Editor. Ne jamais mettre une clé `sb_secret_…` ou `sbp_…` dans le dépôt ; la régénérer après usage.
+
 ## 3. Ce qui reste à faire (dans l'ordre)
 1. **Première vraie copie** (jamais faite : tout a été testé en local seulement). Il faut de BTK : le nom du nouveau dépôt (`BTKzeyrox/<nom>`), le **ref du nouveau projet Supabase** (pg_cron et pg_net activés), un token GitHub avec `repo` + `workflow`, un token Supabase `sbp_…`, le choix Cloudinary (même ou autre), et le pseudo / nom / mot de passe de l'admin. Puis suivre `NOUVEAU_PROJET.md` étape par étape, **avec un essai à blanc d'abord** (`copy:project` sans `--push`, `deploy:server --dry-run`).
 2. **Corriger `NOUVEAU_PROJET.md`** avec tout ce qui coince à la première copie (et le dire à BTK).
