@@ -1151,3 +1151,34 @@ html.theme-dark header.df-topbar.df-topbar {
   box-shadow: 0 4px 12px -4px rgba(37, 99, 235, 0.5);
 }
 .bg-emerald-600.text-white:hover, .bg-blue-600.text-white:hover { filter: brightness(1.12); }
+
+/* ===== Charte BTK : thème clair (2026-11-20) ===== */
+html.theme-light { --gp-page: #e9eef5; --gp-line: #c5d0df; --gp-card: #ffffff; }
+html.theme-light, html.theme-light body, html.theme-light .df-bg-app, html.theme-light .df-bg-login {
+  background-color: var(--gp-page); background-image: none;
+}
+html.theme-light [class*="rounded-xl"][class*="border"], html.theme-light [class*="rounded-2xl"][class*="border"] {
+  border-color: var(--gp-line);
+  box-shadow: 0 1px 2px rgba(11, 42, 74, 0.10), 0 8px 20px -14px rgba(11, 42, 74, 0.30);
+}
+/* Menu clair : blanc (pas marine) */
+html.theme-light aside.df-sb.df-sb {
+  --sb-bg: #ffffff; --sb-line: #c5d0df; --sb-text: #0b2a4a; --sb-sub: #3b5a85; --sb-item: #1e3a5f;
+  --sb-hover: rgba(29, 78, 216, 0.08); --sb-active: #1d4ed8; --sb-prof: #f1f5fb; --sb-btn: #eef2f9; --sb-btn-h: #e2e8f5; --sb-btn-t: #1e3a5f;
+  --sb-badge: #e8eefb; --sb-badge-t: #1e3a5f; --sb-tile: #eef2f9;
+  background-color: #ffffff !important;
+  background-image: linear-gradient(180deg, #ffffff, #f3f6fb) !important;
+  border-color: #c5d0df !important;
+}
+html.theme-light aside.df-sb .df-sb-title {
+  background-image: linear-gradient(90deg, #1e3a8a, #2563eb);
+  -webkit-background-clip: text; background-clip: text;
+  -webkit-text-fill-color: transparent; color: transparent !important;
+}
+/* Header clair : blanc, fine ligne bleue en bas */
+html.theme-light header.df-topbar.df-topbar {
+  background-color: #ffffff !important;
+  background-image: linear-gradient(180deg, #ffffff, #f3f6fb) !important;
+  border-color: #c5d0df !important;
+  box-shadow: inset 0 -2px 0 rgba(37, 99, 235, 0.35), 0 4px 10px -4px rgba(11, 42, 74, 0.14) !important;
+}
