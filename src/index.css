@@ -1143,3 +1143,11 @@ html.theme-dark header.df-topbar.df-topbar {
   border-color: rgba(59, 130, 246, 0.35) !important;
   box-shadow: 0 0 14px rgba(59, 130, 246, 0.18) !important;
 }
+
+/* ===== Charte BTK : boutons principaux (les deux thèmes) ===== */
+.bg-emerald-600.text-white, .bg-blue-600.text-white {
+  background-color: #2563eb !important;
+  background-image: linear-gradient(135deg, #2563eb, var(--btk-blue-3)) !important;
+  box-shadow: 0 4px 12px -4px rgba(37, 99, 235, 0.5);
+}
+.bg-emerald-600.text-white:hover, .bg-blue-600.text-white:hover { filter: brightness(1.12); }
