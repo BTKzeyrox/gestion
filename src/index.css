@@ -390,6 +390,9 @@ html { -webkit-tap-highlight-color: rgba(59, 130, 246, 0.22); }
 }
 
 
+:root { --hdr-gap: 0px; --hdr: 57px; }
+@media (min-width: 768px) { :root { --hdr-gap: 12px; --hdr: 69px; } }
+
 /* Formulaires / fenêtres : le CONTENU s'ouvre sous le header fixe (jamais derrière), et défile si trop long ;
    le FOND (voile + flou) couvre tout l'écran, header compris (avant 2026-10-28 le fond commençait sous le header : il restait net). */
 body:has(header.df-topbar) .fixed.inset-0.flex:not([class*="z-[9999]"]) {
@@ -397,7 +400,7 @@ body:has(header.df-topbar) .fixed.inset-0.flex:not([class*="z-[9999]"]) {
   bottom: auto;
   height: var(--vvh, 100dvh);
   max-height: var(--vvh, 100dvh);
-  padding-top: calc(57px + 1rem);
+  padding-top: calc(var(--hdr, 57px) + 1rem);
   padding-bottom: calc(1rem + env(safe-area-inset-bottom));
   box-sizing: border-box;
   overflow-y: auto;
