@@ -23,7 +23,7 @@
 | 6 | Script de déploiement du serveur (3 fonctions) avec confirmation du projet | `npm run deploy:server` |
 | 7 | Contrôle « zéro trace de l'ancien compte » | `npm run check:no-old-account` |
 | 8 | Guide complet de copie et de passation | `NOUVEAU_PROJET.md`, `HANDOVER.md` § 0 bis |
-| 9 | `df-api` : 1re tranche du découpage (bloc TOTP dans `totp.ts`) | `supabase/functions/df-api/totp.ts` |
+| 9 | `df-api` : découpage en cours. Tranche 1 : bloc TOTP dans `totp.ts`. Tranche 2 (2026-11-20) : règles pures de la comptabilité dans `accounting.ts` | `supabase/functions/df-api/totp.ts`, `accounting.ts` |
 
 ## 2 bis. CE DÉPÔT (`BTKzeyrox/gestion`) est la copie n° 1 de Nprojet (2026-11-19)
 Les textes `.md` ci-dessous parlent encore de Nprojet : c'est voulu (copie identique, **seuls les comptes changent**, décision de BTK). Les comptes de ce dépôt : `site.config.json` (Supabase `blvuwirzmtmlehafnvew`, même Cloudinary que Nprojet, dépôt `BTKzeyrox/gestion`).
@@ -31,6 +31,12 @@ Les textes `.md` ci-dessous parlent encore de Nprojet : c'est voulu (copie ident
 - **Fait** : dépôt créé (2 commits : copie pure, puis comptes) ; `supabase/setup-complete.sql` généré (`npm run setup:sql`) et lancé par BTK dans le SQL Editor du nouveau Supabase (la 5e tâche planifiée est apparue) ; SQL du compte admin donné à BTK.
 - **Reste** : (a) vérifier la base (44 tables avec RLS, 5 tâches dans `cron.job`, secret `df_project_url` = adresse du nouveau projet) ; (b) lancer le SQL du compte admin (`npm run admin:sql` le refait) ; (c) secrets Cloudinary / Resend dans le coffre-fort (`NOUVEAU_PROJET.md` § 2) ; (d) envoyer le serveur : `SUPABASE_ACCESS_TOKEN=sbp_… npm run deploy:server -- --confirm-ref blvuwirzmtmlehafnvew` (3 fonctions, tous les fichiers de `df-api`) ; (e) projet Vercel relié à `BTKzeyrox/gestion` (Vite, aucune variable) ; (f) contrôle final (`NOUVEAU_PROJET.md` § 7). Cocher ici ce qui est fait.
 - **Limite** : l'IA de la session n'a pas accès au Supabase `blvuwirzmtmlehafnvew` (autre compte, réseau bloqué) : le SQL se lance à la main dans le SQL Editor. Ne jamais mettre une clé `sb_secret_…` ou `sbp_…` dans le dépôt ; la régénérer après usage.
+
+## 2 ter. Mise à niveau de cette copie sur Nprojet (2026-11-21, décision de BTK : « tout remplacer par Nprojet »)
+- Le code de `gestion` = le code de `Nprojet` au commit `06f3bdc` (galerie d'images, glissement « Retour », header 64 px, `accounting.ts`, chat, guides…). **Seuls les comptes restent ceux de `gestion`** : `site.config.json` et `supabase/functions/df-api/site-config.ts`.
+- Les 5 commits de design propres à `gestion` (20 nov. : header au niveau du menu, charte BTK, thèmes, `PLAN_DESIGN.md`) sont **remplacés** par ceux de Nprojet. Ils restent lisibles dans l'historique git (`cccbf32` à `f2628c7`).
+- Aucune migration nouvelle : la base de `gestion` n'a rien à rattraper. Le serveur de `gestion` n'a **pas** été redéployé (le découpage `accounting.ts` ne change pas le comportement) : au prochain déploiement, envoyer les 4 fichiers de `df-api` (voir `NOUVEAU_PROJET.md`, méthode B).
+- Règle : Nprojet reste la référence. Pour rattraper de nouveau : reprendre l'arbre de Nprojet, puis remettre les deux fichiers de comptes.
 
 ## 3. Ce qui reste à faire (dans l'ordre)
 1. **Première vraie copie** (jamais faite : tout a été testé en local seulement). Il faut de BTK : le nom du nouveau dépôt (`BTKzeyrox/<nom>`), le **ref du nouveau projet Supabase** (pg_cron et pg_net activés), un token GitHub avec `repo` + `workflow`, un token Supabase `sbp_…`, le choix Cloudinary (même ou autre), et le pseudo / nom / mot de passe de l'admin. Puis suivre `NOUVEAU_PROJET.md` étape par étape, **avec un essai à blanc d'abord** (`copy:project` sans `--push`, `deploy:server --dry-run`).

@@ -5,7 +5,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { FOCUS_SEARCH_EVENT } from '../utils/shortcutEvents';
 import { requestFeedTop, pinFeedScroll, unpinFeedScroll, readFeedPos, writeFeedPos } from '../utils/feedScroll';
 import { PageHelp } from './PageHelp';
-import { Bell, Menu, Search, X, Users, ClipboardList, Calendar, FileText, Newspaper, MessageSquare } from 'lucide-react';
+import { Bell, Menu, Search, X, Users, ClipboardList, Calendar, FileText, MessageSquare, LayoutDashboard, ClipboardCheck } from 'lucide-react';
 import { User } from '../types';
 import { useApp } from '../context/AppContext';
 import { db } from '../db/store';
@@ -133,7 +133,33 @@ export const TopBar: React.FC<TopBarProps> = ({ currentUser, onOpenMenu, onNavig
   }, []);
 
   const mergedMenu = mergedFor(currentUser.role, useMenuMode());
-  const home = isAdmin ? 'dashboard' : 'grid';
+  const home = 'feed';
+  const goHomeAndRefresh = () => {
+    if (activeView === 'feed') {
+      // Ne pas démonter Actualités avant que son propre conteneur ait fini
+      // l’animation : sinon son requestAnimationFrame est annulé au démontage.
+      requestFeedTop();
+      window.setTimeout(() => { void db.refreshNow(); }, 650);
+      return;
+    }
+    const animateWindowTop = () => {
+      const from = window.scrollY;
+      if (from <= 1) return;
+      const started = performance.now();
+      const frame = (now: number) => {
+        const progress = Math.min(1, (now - started) / 520);
+        const eased = progress < 0.5 ? 4 * progress * progress * progress : 1 - Math.pow(-2 * progress + 2, 3) / 2;
+        window.scrollTo(0, Math.round(from * (1 - eased)));
+        if (progress < 1) window.requestAnimationFrame(frame);
+      };
+      window.requestAnimationFrame(frame);
+    };
+    animateWindowTop();
+    onNavigate(home);
+    // Après le montage de l’accueil, on déclenche son vrai conteneur de scroll.
+    window.setTimeout(() => { requestFeedTop(); }, 240);
+    window.setTimeout(() => { void db.refreshNow(); }, 700);
+  };
   const pages = useMemo(
     () =>
       isAdmin
@@ -228,11 +254,11 @@ export const TopBar: React.FC<TopBarProps> = ({ currentUser, onOpenMenu, onNavig
   return (
     <>
     {/* Place réservée : la barre est en position fixe, le contenu ne passe pas dessous */}
-    <div className="h-[var(--hdr,57px)] shrink-0" aria-hidden="true" />
-    <header style={{ top: 'calc(var(--vvt, 0px) + var(--hdr-gap, 0px))', left: 'var(--sbw, 0px)' }} className={`fixed left-0 right-0 md:right-3 md:border md:rounded-2xl z-30 df-topbar border-b rounded-b-2xl ${L ? 'border-slate-200' : 'border-slate-800'} ${L ? 'text-slate-800' : 'text-slate-100'} shadow-[0_2px_12px_rgba(15,30,58,0.10)]`}>
-      <div className="relative h-14 px-2.5 sm:px-4 flex items-center justify-between md:justify-start gap-1.5 sm:gap-2.5 md:gap-3">
-        <button type="button" data-header-dashboard data-app-logo onClick={() => onNavigate(home)} title="Tableau de bord" aria-label="Tableau de bord" className={`md:hidden shrink-0 w-10 h-10 rounded-xl overflow-hidden border cursor-pointer ${L ? 'border-slate-200' : 'border-slate-700'}`}>
-          <img src="/icon-192.png" alt="" width={40} height={40} className="w-full h-full object-cover" draggable={false} />
+    <div className="h-[var(--hdr,65px)] shrink-0" aria-hidden="true" />
+    <header style={{ top: 'calc(var(--vvt, 0px) + var(--hdr-gap, 0px))', left: 'var(--sbw, 0px)' }} className={`fixed left-0 right-0 md:right-3 z-30 df-topbar border-b md:border rounded-b-2xl md:rounded-2xl ${L ? 'border-slate-200' : 'border-slate-800'} ${L ? 'text-slate-800' : 'text-slate-100'} shadow-[0_2px_12px_rgba(15,30,58,0.10)]`}>
+      <div className="relative h-16 px-2.5 sm:px-4 flex items-center justify-between md:justify-start gap-1.5 sm:gap-2.5 md:gap-3">
+        <button type="button" data-app-logo onClick={goHomeAndRefresh} title="Actualités" aria-label="Actualités" className={`md:hidden shrink-0 w-10 h-10 flex items-center justify-center rounded-xl border cursor-pointer ${L ? 'border-slate-200 bg-slate-50 text-slate-700' : 'border-slate-700 bg-slate-800 text-slate-300'}`}>
+          <ClipboardCheck className="w-5 h-5" />
         </button>
         <button type="button" data-header-search onClick={() => { setMSearch(true); setOpen(true); }} title="Rechercher" aria-label="Rechercher" className={`md:hidden relative shrink-0 w-10 h-10 flex items-center justify-center rounded-full border cursor-pointer ${L ? 'border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100' : 'border-slate-700 bg-slate-800 text-slate-300 hover:bg-slate-700'}`}>
           <Search className="w-5 h-5" />
@@ -276,18 +302,19 @@ export const TopBar: React.FC<TopBarProps> = ({ currentUser, onOpenMenu, onNavig
           )}
         </div>
 
-        {/* Actualités et Messages : toujours dans l'en-tête (plus de barre du bas, plus dans le menu latéral) */}
+        {/* Messages : l’accès Actualités est désormais regroupé avec l’icône du projet. */}
         <div className="contents md:flex md:items-center md:gap-3 md:shrink-0" data-header-shortcuts>
-          {([['feed', 'Actualités', Newspaper, 0], ['chat', 'Messages', MessageSquare, chatUnread]] as const).map(([view, label, Icon, n]) => (
+          {([['dashboard', 'Centre de contrôle', LayoutDashboard, 0, 'flex', true], ['chat', 'Messages', MessageSquare, chatUnread, 'flex', false]] as const).map(([view, label, Icon, n, visibility, isDashboard]) => (
             <button
               key={view}
               type="button"
-              onClick={() => { if (view === 'feed' && activeView === 'feed') requestFeedTop(); onNavigate(view); }}
+              onClick={() => onNavigate(view)}
               title={label}
               aria-label={label}
               data-header-shortcut={view}
+              {...(isDashboard ? { 'data-header-dashboard': true } : {})}
               aria-current={activeView === view ? 'page' : undefined}
-              className={`relative shrink-0 w-10 h-10 flex items-center justify-center rounded-full border cursor-pointer ${activeView === view ? (L ? 'border-emerald-500 bg-emerald-50 text-emerald-700' : 'border-emerald-500 bg-emerald-950/50 text-emerald-300') : L ? 'border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100' : 'border-slate-700 bg-slate-800 text-slate-300 hover:bg-slate-700'}`}
+              className={`${visibility} relative shrink-0 w-10 h-10 items-center justify-center rounded-full border cursor-pointer ${activeView === view ? (L ? 'border-emerald-500 bg-emerald-50 text-emerald-700' : 'border-emerald-500 bg-emerald-950/50 text-emerald-300') : L ? 'border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100' : 'border-slate-700 bg-slate-800 text-slate-300 hover:bg-slate-700'}`}
             >
               <Icon className="w-5 h-5" />
               {n > 0 && <span className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 rounded-full bg-red-600 text-white text-[11px] font-bold flex items-center justify-center">{n > 99 ? '99+' : n}</span>}
@@ -385,6 +412,8 @@ export const TopBar: React.FC<TopBarProps> = ({ currentUser, onOpenMenu, onNavig
           <Avatar src={currentUser.avatar_url} name={currentUser.name} className="w-8 h-8 rounded-full" />
           <span data-presence-dot className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 ${L ? 'border-white' : 'border-slate-900'} bg-emerald-500`} />
         </button>
+
+        <div className="hidden md:block" data-header-conn><ConnectionChip /></div>
 
         {/* Téléphone : la recherche s'étire sur toute la largeur de l'en-tête (X = effacer, puis fermer) */}
         {mSearch && (

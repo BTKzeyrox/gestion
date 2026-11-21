@@ -4,6 +4,7 @@
 import { clearAllDrafts } from './utils/drafts';
 import { readResume, noteResume, clearResume, setBootChat } from './utils/resumeState';
 import { saveFeedScroll } from './utils/feedScroll';
+import { backTarget, swipeAxis, dragOffset, isBackSwipe, swipeBlocked, SWIPE_MS, type SwipeBack } from './utils/pageSwipe';
 import { isKnownView } from './utils/health/menu';
 import { useViewportWidth } from './utils/viewportWidth';
 import { closeDigestNotifications } from './utils/pushDigest';
@@ -118,6 +119,71 @@ export default function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(db.getCurrentUser());
   const resumeRef = useRef(readResume(db.getCurrentUser()?.id)); // reprise après rechargement (moins de 30 min) : même page, même position
   const [activeView, setActiveView] = useState<string>(() => { const r = resumeRef.current; setBootChat(r && r.view === 'chat' ? r.chat : ''); return r && (isKnownView(r.view) || r.view === 'feed' || r.view === 'grid' || r.view === 'chat') ? r.view : 'feed'; });
+  const [mobileSwipeX, setMobileSwipeX] = useState(0);
+  const [swipeAnim, setSwipeAnim] = useState(false); // vrai pendant l'animation seulement (jamais quand la page suit le doigt)
+  const mobileSwipeXRef = useRef(0);
+  const mobileSwipe = useRef<{ x: number; y: number; axis: 'x' | 'y' | null } | null>(null);
+  const mobileSwipeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const swipeBusy = useRef(false);
+  const swipeBackFn = useRef<() => SwipeBack>(() => ({ kind: 'none' })); // remplie à chaque affichage (voir plus bas) : où mène « Retour »
+  const swipeDo = useRef<(t: SwipeBack) => void>(() => {});
+  const viewHistory = useRef<string[]>([]);
+  const previousView = useRef(activeView);
+  const skipViewHistory = useRef(false);
+  useEffect(() => {
+    if (previousView.current !== activeView) {
+      if (!skipViewHistory.current) viewHistory.current = [...viewHistory.current.slice(-19), previousView.current];
+      skipViewHistory.current = false;
+      previousView.current = activeView;
+    }
+  }, [activeView]);
+  // Glissement « Retour » (téléphone) : droite = onglet d'avant, sinon page d'avant (règles dans utils/pageSwipe.ts)
+  useEffect(() => {
+    const settle = () => { mobileSwipeXRef.current = 0; setMobileSwipeX(0); };
+    const onStart = (e: TouchEvent) => {
+      if (swipeBusy.current || window.innerWidth >= 768 || activeView === 'chat' || e.touches.length !== 1) return;
+      if (e.target instanceof Element && swipeBlocked(e.target)) return;
+      const t = e.touches[0];
+      setSwipeAnim(false);
+      mobileSwipe.current = { x: t.clientX, y: t.clientY, axis: null };
+    };
+    const onMove = (e: TouchEvent) => {
+      const s = mobileSwipe.current; if (!s) return;
+      if (e.touches.length !== 1) { mobileSwipe.current = null; settle(); return; }
+      const t = e.touches[0], dx = t.clientX - s.x, dy = t.clientY - s.y;
+      if (!s.axis) s.axis = swipeAxis(dx, dy);
+      if (s.axis === 'y') { mobileSwipe.current = null; settle(); return; }
+      if (s.axis !== 'x') return;
+      const x = dragOffset(dx, swipeBackFn.current().kind !== 'none', window.innerWidth);
+      mobileSwipeXRef.current = x; setMobileSwipeX(x);
+    };
+    const onEnd = (e: TouchEvent) => {
+      const s = mobileSwipe.current; mobileSwipe.current = null;
+      if (!s || s.axis !== 'x') return;
+      const target = swipeBackFn.current();
+      const t = e.changedTouches[0];
+      const dx = t ? t.clientX - s.x : mobileSwipeXRef.current;
+      if (!isBackSwipe(dx, target.kind !== 'none')) { setSwipeAnim(true); settle(); return; }
+      swipeBusy.current = true;
+      setSwipeAnim(true);
+      mobileSwipeXRef.current = window.innerWidth; setMobileSwipeX(window.innerWidth); // la page sort à droite
+      mobileSwipeTimer.current = setTimeout(() => {
+        setSwipeAnim(false);
+        mobileSwipeXRef.current = -window.innerWidth * 0.3; setMobileSwipeX(-window.innerWidth * 0.3); // la page d'avant arrive de la gauche
+        swipeDo.current(target);
+        requestAnimationFrame(() => requestAnimationFrame(() => { setSwipeAnim(true); settle(); mobileSwipeTimer.current = setTimeout(() => { swipeBusy.current = false; setSwipeAnim(false); }, SWIPE_MS + 20); }));
+      }, SWIPE_MS);
+    };
+    window.addEventListener('touchstart', onStart, { passive: true });
+    window.addEventListener('touchmove', onMove, { passive: true });
+    window.addEventListener('touchend', onEnd);
+    window.addEventListener('touchcancel', onEnd);
+    return () => {
+      window.removeEventListener('touchstart', onStart); window.removeEventListener('touchmove', onMove); window.removeEventListener('touchend', onEnd); window.removeEventListener('touchcancel', onEnd);
+      if (mobileSwipeTimer.current) clearTimeout(mobileSwipeTimer.current);
+      swipeBusy.current = false;
+    };
+  }, [activeView]);
   const [focusOperatorId, setFocusOperatorId] = useState<string | null>(null); // opérateur ouvert depuis la recherche
   const menuMode = useMenuMode(); // menu simplifié (12 entrées + onglets) ou ancien menu, réglage de cet appareil
   const [, setStatsTick] = useState(0);
@@ -126,7 +192,8 @@ export default function App() {
   const [showReport, setShowReport] = useState(false); // fenêtre « Signaler un problème »
   // Page cachée par le responsable (Réglages > Pages du menu) : on revient aux Actualités
   const hiddenPages = readCompany(db.getSettings().company).modules.hidden;
-  useEffect(() => { if (isViewHidden(hiddenPages, activeView)) setActiveView('feed'); }, [hiddenPages, activeView]);
+  // Le raccourci Dashboard du header reste toujours ouvrable, même si sa tuile a été masquée du menu latéral.
+  useEffect(() => { if (activeView !== 'dashboard' && isViewHidden(hiddenPages, activeView)) setActiveView('feed'); }, [hiddenPages, activeView]);
   useEffect(() => { const open = (e: Event) => { const v = (e as CustomEvent).detail; if (typeof v === 'string' && v) { setFocusOperatorId(null); setActiveView(v); } }; window.addEventListener(OPEN_VIEW_EVENT, open); return () => window.removeEventListener(OPEN_VIEW_EVENT, open); }, []); // raccourcis (Feuille du jour…)
   useEffect(() => { setCurrentPage(activeView); }, [activeView]); // la page est jointe aux rapports d'erreur
   // Clic sur une notification externe : le bon endroit s'ouvre (au démarrage, ou tout de suite si l'appli est déjà ouverte)
@@ -495,6 +562,13 @@ export default function App() {
   if (loc) rememberTab(loc.group, loc.tab);
   const tabBadges: Record<string, number> = viewUser.role === 'admin' ? { validations: countPending().total } : {};
   const tabsRow = showTabs && grp && loc ? <MenuTabs group={grp} activeTab={loc.tab} badges={tabBadges} fixed={activeView === 'chat'} onPick={id => { const tb = grp.tabs.find(x => x.id === id); if (tb) { setFocusOperatorId(null); goToTab(tb, view => setActiveView(view)); } }} /> : null;
+  // « Retour » par glissement : où il mène depuis la page ouverte (onglet d'avant, sinon page d'avant), et comment y aller
+  swipeBackFn.current = () => backTarget(showTabs && grp ? grp.tabs.map(x => x.id) : [], loc?.tab, viewHistory.current);
+  swipeDo.current = t => {
+    // un retour ne s'ajoute jamais à la mémoire des pages (sinon le prochain retour reviendrait ici) ; seulement si la page change vraiment
+    if (t.kind === 'tab') { const tb = grp?.tabs.find(x => x.id === t.tabId); if (tb) { if (tb.view !== previousView.current) skipViewHistory.current = true; setFocusOperatorId(null); goToTab(tb, view => setActiveView(view)); } }
+    else if (t.kind === 'page') { if (t.view !== previousView.current) skipViewHistory.current = true; viewHistory.current.pop(); setActiveView(t.view); }
+  };
   // 3. LOGGED IN -> MODERN SIDEBAR LAYOUT
   return (
     <div className={`df-bg-app min-h-screen flex flex-col font-sans transition-colors duration-200 ${
@@ -552,7 +626,7 @@ export default function App() {
 
         {/* Dynamic Page Content Based on activeView */}
         {showTabs && activeView === 'chat' && tabsRow}
-        <main style={activeView === 'chat' ? { top: `calc(var(--hdr, 57px) + ${showTabs ? MENU_TABS_H : 0}px + var(--vvt, 0px))`, height: `calc(var(--vvh, 100dvh) - var(--hdr, 57px) - ${showTabs ? MENU_TABS_H : 0}px - var(--bnh, 0px))`, left: 'var(--sbw, 0px)' } : undefined} className={activeView === 'chat' ? 'fixed left-0 right-0 z-20 min-h-0 overflow-hidden p-0 sm:p-2' : 'flex-1 p-2 pt-3 sm:p-3 sm:pt-4 lg:p-4 lg:pt-5 max-w-none w-full mx-auto'}>
+        <main style={{ ...(activeView === 'chat' ? { top: `calc(var(--hdr, 65px) + ${showTabs ? MENU_TABS_H : 0}px + var(--vvt, 0px))`, height: `calc(var(--vvh, 100dvh) - var(--hdr, 65px) - ${showTabs ? MENU_TABS_H : 0}px - var(--bnh, 0px))`, left: 'var(--sbw, 0px)' } : {}), ...(mobileSwipeX ? { transform: `translate3d(${mobileSwipeX}px, 0, 0)`, transition: swipeAnim ? `transform ${SWIPE_MS}ms cubic-bezier(.22,.8,.3,1)` : 'none' } : {}) }} className={activeView === 'chat' ? 'fixed left-0 right-0 z-20 min-h-0 overflow-hidden p-0 sm:p-2' : 'flex-1 p-2 pt-3 sm:p-3 sm:pt-4 lg:p-4 lg:pt-5 max-w-none w-full mx-auto'}>
           {showTabs && activeView !== 'chat' && tabsRow}
           <Suspense fallback={<PageSkeleton />}>
           <ErrorBoundary scope="page" key={activeView + (activeView === 'stats' ? getStatsTab() : '')}>

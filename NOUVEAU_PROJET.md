@@ -75,8 +75,18 @@ Lance le SQL affiché dans le Supabase **neuf**. L'identifiant `user-admin-1` es
 npm run deploy:server -- --dry-run --confirm-ref <REF_NEUF>      # voir sans rien envoyer
 SUPABASE_ACCESS_TOKEN=sbp_... npm run deploy:server -- --confirm-ref <REF_NEUF>
 ```
-Envoie `df-api` (**avec ses 3 fichiers** : `index.ts`, `totp.ts`, `site-config.ts`), `df-restore` et `df-assistant` sur le projet de `site.config.json`, puis teste la route publique `signup-info`. Le `--confirm-ref` doit être égal au ref du fichier : impossible de viser un autre projet par erreur. `verify_jwt = false` vient de `supabase/config.toml`.
-Si tu déploies autrement (connecteur, tableau de bord) : **envoie tous les fichiers du dossier de la fonction**, sinon `df-api` ne démarre pas (`totp.ts` et `site-config.ts` sont importés par `index.ts`).
+Envoie `df-api` (**avec ses 4 fichiers** : `index.ts`, `totp.ts`, `accounting.ts`, `site-config.ts`), `df-restore` et `df-assistant` sur le projet de `site.config.json`, puis teste la route publique `signup-info`. Le `--confirm-ref` doit être égal au ref du fichier : impossible de viser un autre projet par erreur. `verify_jwt = false` vient de `supabase/config.toml`.
+Si tu déploies autrement (connecteur, tableau de bord) : **envoie tous les fichiers du dossier de la fonction**, sinon `df-api` ne démarre pas (`totp.ts`, `accounting.ts` et `site-config.ts` sont importés par `index.ts`).
+**Méthode B — sans terminal (par un connecteur Supabase ou le tableau de bord), la méthode utilisée pour Nprojet** : `df-api` pèse plus de 500 Ko, trop pour un envoi direct. On envoie à la place **un fichier `index.ts` d'une seule ligne**, qui va chercher le code sur GitHub à un commit précis (les autres fichiers `totp.ts`, `accounting.ts`, `site-config.ts` se chargent tout seuls depuis le même dossier) :
+```ts
+import "https://raw.githubusercontent.com/<OWNER>/<DEPOT>/<COMMIT_COMPLET_40_CARACTÈRES>/supabase/functions/df-api/index.ts";
+```
+- Nom de la fonction `df-api`, point d'entrée `index.ts`, **`verify_jwt` = false** (idem pour `df-restore` et `df-assistant`, qui sont petites : on envoie leur contenu tel quel).
+- Le dépôt doit être **public** (ou le lien lisible sans compte), et le commit doit **déjà être poussé** sur GitHub.
+- Utiliser le commit de la copie **qui contient les comptes du nouveau projet** (le 2e commit « comptes »), jamais celui de l'original.
+- Avant de remplacer une fonction qui tourne : `select public.df_take_backup();`, et noter le commit précédent. **Retour arrière = redéployer l'ancien commit.**
+- Essayée pour de vrai sur Nprojet le 2026-11-20 (version 89, 4 fichiers, `signup-info` répond 200).
+
 **Réglages facultatifs** (secrets de fonctions, Supabase → Edge Functions → Secrets) : `GEMINI_API_KEY` (assistant IA), `RESEND_API_KEY`, `REMINDER_MAIL_TO`, `REMINDER_MAIL_FROM` (mail de rappels). La clé de service et l'adresse du projet sont fournies automatiquement ; les sessions sont signées avec la clé de **ce** projet.
 **Test sans navigateur** :
 - `POST https://<ref>.supabase.co/functions/v1/df-api/login` avec `{"username":"zz","password":"x"}` → **401** « Pseudo ou mot de passe incorrect. » (le serveur tourne et lit la base).
@@ -112,7 +122,7 @@ Si tu déploies autrement (connecteur, tableau de bord) : **envoie tous les fich
 | `setup-complete.sql` : « extension pg_cron / pg_net not available » | Active-les dans Database → Extensions, relance sur une base **vide** (ou supprime les tables créées à moitié). |
 | Le SQL complet relancé donne des erreurs | Il est fait pour **une seule** exécution sur une base neuve. |
 | Les rappels, notifications ou rapports automatiques ne partent pas | `select * from cron.job_run_details order by start_time desc limit 5;` puis vérifie le secret `df_project_url` et que `df-api` est déployée. |
-| Connexion : erreur 500 « Serveur mal configuré » ou « Function not found » | `df-api` pas déployée, ou déployée sans `totp.ts` / `site-config.ts`. Relance `npm run deploy:server`. |
+| Connexion : erreur 500 « Serveur mal configuré » ou « Function not found » | `df-api` pas déployée, ou déployée sans `totp.ts` / `accounting.ts` / `site-config.ts`. Relance `npm run deploy:server`. |
 | Photos : l'envoi échoue | Secrets Cloudinary absents du coffre-fort, ou `cloudinary.cloudName` de `site.config.json` ≠ celui du compte (puis `config:sync` et redéployer). |
 | Mails de restauration : rien reçu | Secret `resend_api_key` absent, ou Resend sans domaine : seule l'adresse du compte Resend reçoit. |
 

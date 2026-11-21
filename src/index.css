@@ -337,6 +337,13 @@ html.theme-light .df-popover {
   .nav-flash, .nav-flash-short { animation: none; box-shadow: inset 0 0 0 4px rgba(34, 211, 238, 0.95); }
 }
 
+/* (2026-11-21 : barre plus haute, 64 px + 1 px de trait = 65 px, car les icônes de 40 px étaient trop serrées en haut et en bas) */
+/* Barre du haut posée comme le menu : sur ordinateur (≥ 768 px) elle commence 12 px plus bas (comme la sidebar) ; --hdr = place prise en haut par la barre */
+:root { --hdr-gap: 0px; --hdr: 65px; }
+@media (min-width: 768px) {
+  :root { --hdr-gap: 12px; --hdr: 77px; }
+}
+
 /* Barre du haut : couleur UNIE (pas de verre, pas de dégradé, pas de reflet, pas de flou) */
 header.df-topbar {
   background-image: none !important;
@@ -390,9 +397,6 @@ html { -webkit-tap-highlight-color: rgba(59, 130, 246, 0.22); }
 }
 
 
-:root { --hdr-gap: 0px; --hdr: 57px; }
-@media (min-width: 768px) { :root { --hdr-gap: 12px; --hdr: 69px; } }
-
 /* Formulaires / fenêtres : le CONTENU s'ouvre sous le header fixe (jamais derrière), et défile si trop long ;
    le FOND (voile + flou) couvre tout l'écran, header compris (avant 2026-10-28 le fond commençait sous le header : il restait net). */
 body:has(header.df-topbar) .fixed.inset-0.flex:not([class*="z-[9999]"]) {
@@ -400,7 +404,7 @@ body:has(header.df-topbar) .fixed.inset-0.flex:not([class*="z-[9999]"]) {
   bottom: auto;
   height: var(--vvh, 100dvh);
   max-height: var(--vvh, 100dvh);
-  padding-top: calc(var(--hdr, 57px) + 1rem);
+  padding-top: calc(var(--hdr, 65px) + 1rem);
   padding-bottom: calc(1rem + env(safe-area-inset-bottom));
   box-sizing: border-box;
   overflow-y: auto;
@@ -1099,86 +1103,116 @@ html, body { touch-action: pan-x pan-y; }
   header.df-topbar [data-header-shortcut], header.df-topbar [data-header-bell], header.df-topbar [data-header-help] button { margin: 0; }
 }
 
-/* ===== Charte BTK : thème sombre (bleu marine, 2026-11-20) ===== */
+
+/* ===== Charte « BTK » (thème sombre) : les couleurs de l'écran de démarrage (index.html) =====
+   Fond marine profond en dégradé radial ; cartes marine un peu plus claires, fine bordure bleue ; titres et logo en dégradé bleu.
+   Pour changer l'allure : modifier les variables --btk-* ci-dessous (rien d'autre à toucher). */
 :root {
-  --btk-bg-1: #0c2233; --btk-bg-2: #071322; --btk-bg-3: #050b16;
-  --btk-blue-1: #60a5fa; --btk-blue-2: #3b82f6; --btk-blue-3: #1e3a8a;
-  --btk-card: #0f2438; --btk-card-line: rgba(59, 130, 246, 0.24);
+  --btk-bg-1: #0c2233;
+  --btk-bg-2: #071322;
+  --btk-bg-3: #050b16;
+  --btk-blue-1: #60a5fa;
+  --btk-blue-2: #3b82f6;
+  --btk-blue-3: #1e3a8a;
+  --btk-card: #0f2438;
+  --btk-card-line: rgba(59, 130, 246, 0.24);
 }
-/* Fond : dégradé radial fixe derrière tout */
+
+/* 1. Fond : même dégradé que l'écran de démarrage, fixe quand on défile (pas de flou, pas de filtre : léger) */
 html.theme-dark { background: var(--btk-bg-3); }
-html.theme-dark body { background: transparent !important; }
+html.theme-dark body { background: transparent; }
 html.theme-dark body::before {
-  content: ""; position: fixed; inset: 0; z-index: -1; pointer-events: none;
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
   background: radial-gradient(ellipse at 50% 42%, var(--btk-bg-1) 0%, var(--btk-bg-2) 45%, var(--btk-bg-3) 100%);
 }
-html.theme-dark .df-bg-app, html.theme-dark .df-bg-login { background: transparent !important; }
-/* Cartes */
+html.theme-dark .df-bg-app, html.theme-dark .df-bg-login { background-color: transparent; background-image: none; }
+
+/* 2. Cartes : marine un peu plus clair que le fond, fine bordure bleue (les petites fenêtres déroulantes gardent leur fond plein) */
 html.theme-dark [class*="bg-[#"]:not(.df-popover) {
   background-color: var(--btk-card) !important;
   border-color: var(--btk-card-line);
 }
 html.theme-dark [class*="border-slate-"] { border-color: var(--btk-card-line); }
-/* Titres et nom du menu : texte en dégradé bleu */
-html.theme-dark h1, html.theme-dark aside.df-sb .df-sb-title {
-  background-image: linear-gradient(90deg, #bfdbfe, var(--btk-blue-1) 45%, var(--btk-blue-2));
-  -webkit-background-clip: text; background-clip: text;
-  -webkit-text-fill-color: transparent; color: transparent !important;
+html.theme-dark [class*="rounded-2xl"][class*="border"], html.theme-dark [class*="rounded-xl"][class*="border"] {
+  box-shadow: 0 10px 26px -16px rgba(0, 0, 0, 0.7);
 }
-/* Logo du menu (les deux thèmes) */
-aside.df-sb .df-sb-logo {
-  background: linear-gradient(135deg, var(--btk-blue-1), var(--btk-blue-2) 45%, var(--btk-blue-3)) !important;
+
+/* 3. Titres des pages et nom du menu : dégradé de l'écran de démarrage (bleu clair → bleu), assez clair pour rester lisible */
+html.theme-dark h1,
+html.theme-dark aside.df-sb .df-sb-title {
+  background-image: linear-gradient(90deg, #bfdbfe 0%, var(--btk-blue-1) 45%, var(--btk-blue-2) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+}
+html.theme-dark h1:not([class*="flex-1"]), html.theme-dark aside.df-sb .df-sb-title { width: fit-content; max-width: 100%; }
+/* Logo du menu : pastille en dégradé bleu avec une lueur, comme le halo de l'écran de démarrage */
+html.theme-dark aside.df-sb .df-sb-logo {
+  background: linear-gradient(135deg, var(--btk-blue-1) 0%, var(--btk-blue-2) 45%, var(--btk-blue-3) 100%) !important;
   box-shadow: 0 0 18px rgba(59, 130, 246, 0.45);
 }
-/* Menu sombre */
-html.theme-dark aside.df-sb.df-sb {
-  background-color: var(--btk-bg-1) !important;
-  background-image: linear-gradient(180deg, var(--btk-bg-1), var(--btk-bg-2)) !important;
+
+
+/* ===== Charte BTK, suite : menu, header, boutons et thème clair (même palette que l'écran de démarrage) ===== */
+
+/* 4a. Menu de gauche : marine profond en thème SOMBRE ; en thème CLAIR il reste clair (blanc, texte marine, accents BTK) */
+html.theme-dark aside.df-sb {
+  background-image: linear-gradient(180deg, var(--btk-bg-1) 0%, var(--btk-bg-2) 100%) !important;
+  background-color: var(--btk-bg-2) !important;
   border-color: rgba(59, 130, 246, 0.28) !important;
 }
-/* Header sombre */
-html.theme-dark header.df-topbar.df-topbar {
+html.theme-light aside.df-sb {
+  --sb-bg: #ffffff; --sb-line: #c5d0df; --sb-text: #0b2a4a; --sb-sub: #4a6283; --sb-item: #1e3a5f;
+  --sb-hover: rgba(37,99,235,.08); --sb-active: #1d4ed8; --sb-prof: #f1f5fb; --sb-btn: #eef2f8; --sb-btn-h: #e2e8f0; --sb-btn-t: #1e3a5f;
+  --sb-badge: #eef2f8; --sb-badge-t: #1e3a5f; --sb-tile: #eef2f8;
+  background-image: linear-gradient(180deg, #ffffff 0%, #f3f6fb 100%) !important;
+  border-color: #c5d0df !important;
+  box-shadow: 0 10px 30px -18px rgba(11, 42, 74, 0.35);
+}
+/* Nom du menu en dégradé bleu : clair sur le menu sombre, foncé sur le menu clair (pour rester lisible) */
+html.theme-light aside.df-sb .df-sb-title {
+  background-image: linear-gradient(90deg, var(--btk-blue-3) 0%, #2563eb 100%);
+  -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; color: transparent;
+  width: fit-content; max-width: 100%;
+}
+html.theme-light aside.df-sb .df-sb-logo {
+  background: linear-gradient(135deg, var(--btk-blue-1) 0%, var(--btk-blue-2) 45%, var(--btk-blue-3) 100%) !important;
+  box-shadow: 0 0 16px rgba(59, 130, 246, 0.40);
+}
+
+/* 4b. Header : marine en thème sombre, fine ligne bleue lumineuse ; clair en thème clair avec la même ligne bleue */
+html.theme-dark header.df-topbar {
+  background-image: linear-gradient(90deg, var(--btk-bg-1) 0%, #0b2a4a 100%) !important;
   background-color: var(--btk-bg-1) !important;
-  background-image: linear-gradient(90deg, var(--btk-bg-1), #0b2a4a) !important;
   border-color: rgba(59, 130, 246, 0.35) !important;
-  box-shadow: 0 0 14px rgba(59, 130, 246, 0.18) !important;
+  box-shadow: 0 8px 24px -14px rgba(59, 130, 246, 0.45), inset 0 1px 0 rgba(147, 197, 253, 0.08) !important;
+}
+html.theme-light header.df-topbar {
+  background-image: linear-gradient(180deg, #ffffff 0%, #f3f6fb 100%) !important;
+  background-color: #ffffff !important;
+  border-color: #c5d0df !important;
+  box-shadow: 0 8px 22px -14px rgba(30, 58, 138, 0.45), inset 0 -2px 0 rgba(37, 99, 235, 0.35) !important;
 }
 
-/* ===== Charte BTK : boutons principaux (les deux thèmes) ===== */
+/* 4c. Boutons principaux : dégradé bleu → marine (comme « Se connecter ») avec une légère lueur */
 .bg-emerald-600.text-white, .bg-blue-600.text-white {
-  background-color: #2563eb !important;
-  background-image: linear-gradient(135deg, #2563eb, var(--btk-blue-3)) !important;
-  box-shadow: 0 4px 12px -4px rgba(37, 99, 235, 0.5);
+  background-image: linear-gradient(135deg, #2563eb 0%, var(--btk-blue-3) 100%);
+  box-shadow: 0 4px 14px -6px rgba(59, 130, 246, 0.55);
 }
-.bg-emerald-600.text-white:hover, .bg-blue-600.text-white:hover { filter: brightness(1.12); }
+@media (hover: hover) {
+  button.bg-emerald-600.text-white:hover, a.bg-emerald-600.text-white:hover, button.bg-blue-600.text-white:hover, a.bg-blue-600.text-white:hover { filter: brightness(1.12); }
+}
 
-/* ===== Charte BTK : thème clair (2026-11-20) ===== */
-html.theme-light { --gp-page: #e9eef5; --gp-line: #c5d0df; --gp-card: #ffffff; }
-html.theme-light, html.theme-light body, html.theme-light .df-bg-app, html.theme-light .df-bg-login {
-  background-color: var(--gp-page); background-image: none;
-}
-html.theme-light [class*="rounded-xl"][class*="border"], html.theme-light [class*="rounded-2xl"][class*="border"] {
+/* 5. Thème clair : fond gris-bleu net, cartes blanches, bordures et ombres plus marquées, texte marine */
+:root { --gp-page: #e9eef5; --gp-line: #c5d0df; --gp-card: #ffffff; }
+html.theme-light, html.theme-light body { background: var(--gp-page); color: #0b1b33; }
+html.theme-light .df-bg-app, html.theme-light .df-bg-login { background-color: var(--gp-page); background-image: none; }
+html.theme-light [class*="rounded-2xl"][class*="border"], html.theme-light [class*="rounded-xl"][class*="border"] {
   border-color: var(--gp-line);
   box-shadow: 0 1px 2px rgba(11, 42, 74, 0.10), 0 8px 20px -14px rgba(11, 42, 74, 0.30);
-}
-/* Menu clair : blanc (pas marine) */
-html.theme-light aside.df-sb.df-sb {
-  --sb-bg: #ffffff; --sb-line: #c5d0df; --sb-text: #0b2a4a; --sb-sub: #3b5a85; --sb-item: #1e3a5f;
-  --sb-hover: rgba(29, 78, 216, 0.08); --sb-active: #1d4ed8; --sb-prof: #f1f5fb; --sb-btn: #eef2f9; --sb-btn-h: #e2e8f5; --sb-btn-t: #1e3a5f;
-  --sb-badge: #e8eefb; --sb-badge-t: #1e3a5f; --sb-tile: #eef2f9;
-  background-color: #ffffff !important;
-  background-image: linear-gradient(180deg, #ffffff, #f3f6fb) !important;
-  border-color: #c5d0df !important;
-}
-html.theme-light aside.df-sb .df-sb-title {
-  background-image: linear-gradient(90deg, #1e3a8a, #2563eb);
-  -webkit-background-clip: text; background-clip: text;
-  -webkit-text-fill-color: transparent; color: transparent !important;
-}
-/* Header clair : blanc, fine ligne bleue en bas */
-html.theme-light header.df-topbar.df-topbar {
-  background-color: #ffffff !important;
-  background-image: linear-gradient(180deg, #ffffff, #f3f6fb) !important;
-  border-color: #c5d0df !important;
-  box-shadow: inset 0 -2px 0 rgba(37, 99, 235, 0.35), 0 4px 10px -4px rgba(11, 42, 74, 0.14) !important;
 }
