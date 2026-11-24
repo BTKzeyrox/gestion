@@ -25,5 +25,12 @@ const srv = readFileSync('supabase/functions/df-api/index.ts', 'utf8');
 ok(/sessions: nextSessions\(row\?\.sessions, now\)/.test(srv) && /closeAttendanceSession\(me\)/.test(srv) && /online_sec,sessions'/.test(srv), 'serveur : sessions écrites, fermées à la déconnexion et renvoyées');
 ok(/const SESSION_GAP_MS = 150_000/.test(srv) && /const SESSIONS_MAX = 40/.test(srv), 'serveur : coupure à 150 s, 40 sessions au plus par jour');
 ok(/attendanceRoute[\s\S]{0,400}me\.role !== 'admin'\) q = q\.eq\('user_id', me\.id\)/.test(srv), 'serveur : un opérateur ne voit que ses propres connexions (inchangé)');
+// Lignes de la feuille du jour : heure d'envoi et heure de validation (posées par le serveur), affichées à l'heure de Madagascar
+const W = (id: string, st: string, extra: any) => ({ id, employee_id: 'a', client_name: 'Production', work_type: 'production', quantity: 40, rejected: 0, date: '2026-10-28', start_time: '07:00:00', status: st, ...extra });
+const dw = dayDetail([W('w1', 'completed', { start_sent_at: '2026-10-28T04:00:00.000Z', start_validated_at: '2026-10-28T04:15:00.000Z', end_validated_at: '2026-10-28T04:15:00.000Z' }), W('w2', 'pending_start', { start_sent_at: '2026-10-28T05:00:00.000Z' }), W('w3', 'completed', {})] as any, undefined, 'a', '2026-10-28', Date.parse(Z(9, 31)), '2026-10-29');
+const w1 = dw.workLines.find(x => x.id === 'w1'), w2 = dw.workLines.find(x => x.id === 'w2'), w3 = dw.workLines.find(x => x.id === 'w3');
+ok(!!w1 && w1.sent === '07:00' && w1.validated === '07:15', 'ligne validée : envoi 07:00 et validé 07:15 (heure de Madagascar)');
+ok(!!w2 && w2.sent === '08:00' && w2.validated === null, 'ligne en attente : heure d\'envoi, pas d\'heure de validation');
+ok(!!w3 && w3.sent === null && w3.validated === null, 'ligne sans heures posées par le serveur : rien d\'inventé');
 console.log(`\n${n - fails}/${n} contrôles réussis`);
 if (fails) { console.log(`${fails} ÉCHEC(S)`); process.exit(1); }

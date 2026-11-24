@@ -23,7 +23,7 @@ export interface MissionLine {
   startSent: string | null; startValidated: string | null; endSent: string | null; endValidated: string | null;
 }
 /** Une ligne de la feuille du jour (présence, heures, quantité) : jamais montrée comme une mission. `unsent` = encore sur le téléphone (pas partie). */
-export interface WorkLineRow { id: string; type: string; text: string; by: string; state: 'validated' | 'waiting' | 'refused'; unsent: boolean }
+export interface WorkLineRow { id: string; type: string; text: string; by: string; state: 'validated' | 'waiting' | 'refused'; unsent: boolean; /** Heure d'envoi et heure de validation posées par le serveur (HH:MM), absentes si le serveur ne les a pas notées. */ sent?: string | null; validated?: string | null }
 export interface DayDetail {
   firstSeen: string | null; lastSeen: string | null; onlineSec: number;
   /** Arrivée = première connexion du jour. Départ = fin de la dernière connexion (déconnexion ou dernier signe de vie) ; null si encore en ligne. */
@@ -77,7 +77,7 @@ export function workLineRows(posts: PostSession[], empId: string, date: string, 
   return posts
     .filter(p => isWorkLine(p) && p.employee_id === empId && p.date === date)
     .sort((a, b) => String(a.start_time).localeCompare(String(b.start_time)))
-    .map(p => ({ id: p.id, type: String(p.client_name || (p as any).work_type || ''), text: workLineDetail(p), by: workLineBy(p), state: p.status === 'completed' ? 'validated' as const : p.status === 'rejected' ? 'refused' as const : 'waiting' as const, unsent: isUnsent(p.id) }));
+    .map(p => ({ id: p.id, type: String(p.client_name || (p as any).work_type || ''), text: workLineDetail(p), by: workLineBy(p), state: p.status === 'completed' ? 'validated' as const : p.status === 'rejected' ? 'refused' as const : 'waiting' as const, unsent: isUnsent(p.id), sent: stampHm((p as any).start_sent_at), validated: p.status === 'completed' ? (stampHm((p as any).end_validated_at) ?? stampHm((p as any).start_validated_at)) : null }));
 }
 
 /** Lignes d'une feuille encore GARDÉE sur le téléphone (pas partie) pour une personne et un jour : elles n'existent pas encore côté serveur, mais la personne les a bien saisies. */

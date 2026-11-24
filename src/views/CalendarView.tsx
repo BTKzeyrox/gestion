@@ -244,7 +244,7 @@ const DayPanel: React.FC<DayPanelProps> = ({ day, setDay, list, ctx, first, toda
                     <div className={box} data-testid={`day-worklines-${r.id}`}>
                       <div className={h}>Travail saisi (feuille du jour)</div>
                       {d.workLines.map(w => (
-                        <div key={w.id} className={sub} data-testid={`day-workline-${w.id}`}><strong className={txt}>{w.type}</strong> · {w.text || 'Ligne vide'}{w.by ? ` · ${w.by}` : ''} · {w.unsent ? <span className="text-amber-500 font-semibold">pas encore envoyée (sur le téléphone)</span> : w.state === 'validated' ? 'validée' : w.state === 'refused' ? 'refusée' : <span className="text-sky-500">en attente de validation</span>}</div>
+                        <div key={w.id} className={sub} data-testid={`day-workline-${w.id}`}><strong className={txt}>{w.type}</strong> · {w.text || 'Ligne vide'}{w.by ? ` · ${w.by}` : ''} · {w.unsent ? <span className="text-amber-500 font-semibold">pas encore envoyée (sur le téléphone)</span> : w.state === 'validated' ? 'validée' : w.state === 'refused' ? 'refusée' : <span className="text-sky-500">en attente de validation</span>}{w.sent ? ` · envoi ${w.sent}` : ''}{w.validated ? ` · validé ${w.validated}` : ''}</div>
                       ))}
                     </div>
                   )}
