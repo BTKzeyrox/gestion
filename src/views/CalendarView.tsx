@@ -3,7 +3,7 @@
 // Pour modifier : les données viennent de db (posts, users, avances, congés) ; la vue globale s'ouvre avec selectedId 'all' et le détail d'un jour est partagé par l'onglet et la fenêtre du mois.
 import { isOpenMission, isWorkLine } from '../utils/postPay';
 import React, { useState, useEffect, useMemo } from 'react';
-import { dayStatus } from '../utils/dayStatus';
+import { dayStatus, dayLabelOverride } from '../utils/dayStatus';
 import {
   Calendar as CalendarIcon,
   ChevronLeft,
@@ -210,7 +210,7 @@ const DayPanel: React.FC<DayPanelProps> = ({ day, setDay, list, ctx, first, toda
               <button type="button" onClick={() => onPickEmployee(r.id)} className={`font-bold text-sm cursor-pointer text-left ${txt}`}>{r.name}</button>
               {day === today && !sheetOnly && <OnlinePill iso={presenceOf(r.id)} nowMs={nowMs} lang={lang} sub={sub} />}
               {showShift(db.getSettings()) && <span className={`text-[11px] flex items-center gap-1 ${sub}`}>{r.shift === 'day' ? <Sun className="w-3 h-3" /> : <Moon className="w-3 h-3" />}{r.shift === 'day' ? 'Jour' : 'Nuit'}</span>}
-              <span className={`ml-auto inline-flex items-center gap-1 text-xs font-bold ${STATUS_META[r.status].color}`}><StatusIcon status={r.status} className="w-4 h-4" /> {STATUS_META[r.status].label}{r.status === 'leave' && r.leave ? ` · ${leaveLabel(r.leave)}` : ''}</span>
+              <span className={`ml-auto inline-flex items-center gap-1 text-xs font-bold ${STATUS_META[r.status].color}`}><StatusIcon status={r.status} className="w-4 h-4" /> {dayLabelOverride(r.status, r.missions, r.workLines) ?? STATUS_META[r.status].label}{r.status === 'leave' && r.leave ? ` · ${leaveLabel(r.leave)}` : ''}</span>
             </div>
             <div className={`mt-1 flex flex-wrap gap-x-4 gap-y-0.5 text-xs ${sub}`}>
               {r.firstStart && <span>1re mission : <strong className={txt}>{r.firstStart}</strong>{r.lateMin > 0 && <span className="text-amber-500 font-bold"> (+{r.lateMin} min de retard)</span>}</span>}

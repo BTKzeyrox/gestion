@@ -3,7 +3,7 @@
 import { readFileSync } from 'node:fs';
 import { dayDetail, queuedLineRows } from '../src/utils/dayDetail';
 import { dayView, empMonth, globalMonth, globalSummary } from '../src/utils/calendarGlobal';
-import { dayStatus, presenceDayStatus } from '../src/utils/dayStatus';
+import { dayStatus, presenceDayStatus, dayLabelOverride } from '../src/utils/dayStatus';
 import { workLineDetail, workLineBy } from '../src/utils/workLineText';
 let fails = 0, n = 0;
 const ok = (c: boolean, m: string) => { n++; if (!c) { fails++; console.log('ECHEC', m); } else console.log('OK   ', m); };
@@ -59,5 +59,10 @@ ok(st([L({ presence: 'present' }), { ...mission, status: 'rejected' }]) === 'obj
 ok(presenceDayStatus([]) === null, 'aucune ligne : rien');
 const ui = readFileSync('src/views/CalendarView.tsx', 'utf8');
 ok(/Travail saisi/.test(ui) && /day-worklines-/.test(ui) && /getQueuedSheets\(\)/.test(ui) && /présence[^`]*seule/.test(ui) && /Feuille du jour/.test(ui), 'écran : bloc « Travail saisi », feuilles gardées, compteur « présence seule »');
+// Texte du jour : « Objectif atteint » seulement quand il y a des missions ; un jour travaillé par la feuille seule = « Présent (feuille du jour) »
+ok(dayLabelOverride('objective_reached', 0, 2) === 'Présent (feuille du jour)', 'jour travaillé par la feuille seule : « Présent », pas « Objectif atteint »');
+ok(dayLabelOverride('objective_reached', 1, 2) === null && dayLabelOverride('objective_reached', 3, 0) === null, 'jour avec une mission : le texte habituel reste');
+ok(dayLabelOverride('late', 0, 2) === null && dayLabelOverride('absent', 0, 0) === null, 'les autres états gardent leur texte');
+ok(/dayLabelOverride\(r\.status, r\.missions, r\.workLines\) \?\? STATUS_META\[r\.status\]\.label/.test(readFileSync('src/views/CalendarView.tsx', 'utf8')), 'calendrier global : la ligne de la personne utilise ce texte');
 console.log(`\n${n - fails}/${n} contrôles réussis`);
 if (fails) { console.log(`${fails} ÉCHEC(S)`); process.exit(1); }

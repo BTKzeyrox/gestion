@@ -47,3 +47,9 @@ export function dayStatus(shifts: PostSession[], dateStr: string, firstActivity:
   }
   return 'no_post';
 }
+
+/** Texte à afficher à la place de « Objectif atteint » quand le jour est travaillé SEULEMENT par la Feuille du jour (présence, heures, pièces) : sans mission il n'y a pas d'objectif. Le code interne `objective_reached` ne change pas (calculs et contrôles). Renvoie null pour tous les autres cas : le texte habituel reste. */
+export const SHEET_ONLY_PRESENT_LABEL = 'Présent (feuille du jour)';
+export function dayLabelOverride(status: DayStatus, missions: number, workLines: number): string | null {
+  return status === 'objective_reached' && missions === 0 && workLines > 0 ? SHEET_ONLY_PRESENT_LABEL : null;
+}
