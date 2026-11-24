@@ -60,6 +60,7 @@ Puis lire dans l'ordre : `LIRE_EN_PREMIER.md` → `GUIDE_SITE.md` → ce fichier
 - **Aucun secret dans le dépôt** (tokens, clés, mots de passe). Les tokens se donnent dans le chat, se passent par variable d'environnement, et se **suppriment après le travail** : https://github.com/settings/tokens
 - Écrire sur GitHub avec le token de BTK et `git` dans le terminal, jamais avec le connecteur. Un commit clair par sujet, `npm run build` et `npm run check:all` verts avant chaque envoi, `GUIDE_SITE.md` mis à jour dans le même commit (`npm run guide`).
 - Dire honnêtement ce qui est fait, testé ou non testé.
+- **Mise à niveau sur Nprojet : GARDER `TODO_SUIVI_PAIE.md`** (le TODO du suivi des employés, propre à `gestion`). Il a déjà été effacé 3 fois par des mises à niveau « tout remplacer ». Fichiers à garder en plus des comptes : `TODO_SUIVI_PAIE.md` et les fichiers de ce plan.
 
 ## 6. Limites connues (honnêteté)
 - La copie réelle sur un nouveau Supabase n'a **pas** été essayée : seuls les contrôles locaux existent (`check:copy-project`, `check:setup-sql`, `check:deploy-server`, `check:no-old-account`, `check:site-config`).
