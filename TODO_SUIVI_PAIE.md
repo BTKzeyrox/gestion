@@ -79,3 +79,18 @@ Le site est basé sur des **tâches**. Un employé payé **à l'heure** voit enc
 - Aucun mot de passe ni clé dans le dépôt.
 - Ce fichier est propre à `gestion`. Nprojet n'est pas modifié.
 - **Attention aux mises à niveau sur Nprojet** : elles remplacent tout l'arbre et effacent les fichiers qui n'existent que dans `gestion` (ce TODO a déjà été effacé une fois, puis remis le 24/11). Garder ce fichier à chaque mise à niveau.
+
+## 6. État au 24/11 et conception des étapes restantes (pour qui reprend)
+
+**Fait et poussé (affichage seulement, aucun changement de paie, de base ni de serveur) :** E1 (lecture du code), E2 (déjà présent), E3 (jour de feuille = « Présent (feuille du jour) » dans le calendrier global), E4 en partie (heures d'envoi et de validation sur les lignes de la feuille).
+
+**⚠️ Risque principal : les mises à niveau « tout remplacer par Nprojet ».** Elles remplacent tout le code et effaceront E3 et E4. Un changement de serveur déployé (ou de paie) avec un site remis à l'ancienne version se désaccorderait. **Avant tout gros changement, BTK décide** : (a) `gestion` garde ses changements et les mises à niveau deviennent des fusions, ou (b) les améliorations sont faites dans Nprojet (la référence) puis copiées. Sans cette décision, ne pas coder E5, E7, E8.
+
+**Conception, d'après la lecture du code (rien n'est codé) :**
+- **E5 (l'employé envoie lui-même sa ligne)** : aujourd'hui seuls le chef d'équipe et le responsable créent des lignes de travail. La règle est dans le serveur `df-api/index.ts` (création d'une ligne, vers les lignes 255 à 272 : `presence`, `hours`, `quantity`, `rejected`, puis calcul `wePay` pour l'admin) et dans `postPay.ts`. Il faut un nouveau chemin serveur « l'employé envoie, le chef ou l'admin valide, personne ne valide sa propre ligne », puis un écran côté employé. Déploiement serveur à part (méthode du petit `index.ts` qui importe le dépôt à un commit).
+- **E7 (commission)** : ajouter `'commission'` à `PAY_MODES` (`workTypes.ts` ligne 12), `PAY_LABEL` (ligne 24) et `payAmount` (ligne 109) ; un champ pour le montant vendu sur la ligne (types, `workEntry.ts`, `WorksheetView.tsx`, `workLineText.ts`) ; la **même copie du calcul dans le bloc DECIDE du serveur** (`check-payroll-modes` compare les deux, il doit rester vert) ; le pourcentage se règle comme les autres tarifs (`rate_*_ar` de l'entreprise ou tarif propre de l'employé).
+- **E8 (stock à la validation)** : le stock est une collection réservée à l'admin côté serveur (`ADMIN_ONLY_WRITE`, bloc STOCK vérifié par `check-stock.ts`). Le mouvement doit être écrit par le serveur au moment de la validation de la ligne, avec le produit et le sens (entrée pour une fabrication, sortie pour des produits utilisés). Il manque deux décisions de BTK : quels types de paie ou de travail sont liés à un produit, et le retour fournisseur (M23.6).
+- **E6 (assistant de départ)** : il écrirait les réglages de l'entreprise (`company.work` : type de paie par défaut, tarifs `rate_*_ar`) et les règles de saisie et de validation ; l'écran se place dans `src/views/admin/` ; aucun changement serveur.
+- **E9 (fiche de suivi par employé)** : une grande partie existe déjà (calendrier de l'employé, `EmpSummary` : jours travaillés, absences, retards, congés, missions, paie ; page opérateur). À faire : y ajouter les lignes de la feuille, les heures d'envoi et de validation, et les validations en attente, pour le chef d'équipe (son équipe seulement) et le responsable.
+- **Reste de E3** : légende et filtres du calendrier, calendrier personnel de l'employé, tableaux admin avec « Objectif ».
+
