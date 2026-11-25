@@ -66,7 +66,7 @@ Le site est basé sur des **tâches**. Un employé payé **à l'heure** voit enc
   - Une **mission normale reste payée au prix fixe** (règle d'or inchangée).
   - **Pour l'utiliser** : créer un type de travail avec la mesure « le montant vendu » et la paie « commission » (Réglages > Conditions), puis régler le pourcentage. Les modèles d'entreprise prêts à l'emploi n'en contiennent pas encore.
   - [ ] À tester sur le site en ligne (après Vercel) : créer le type, saisir une vente, valider, voir le montant dans la paie.
-  - [ ] Le serveur doit tourner avec ce code : déployer `df-api` au commit de E7 (méthode du petit `index.ts`).
+  - [x] (25/11) **Serveur déployé** : `df-api` version 3 sur le projet `blvuwirzmtmlehafnvew`, petit `index.ts` qui importe le code du commit `a4cbdaa0adb57a090437dfa692db60d2f3d22460` ; `signup-info` répond en JSON et la connexion admin donne 200. `df-restore` et `df-assistant` restent au commit `008606d` (inchangés). **À chaque nouveau changement du serveur, redéployer `df-api` au nouveau commit.**
 - [ ] **E8. Stock à la validation** : le stock monte ou baisse tout seul, avec un historique qu'on peut contrôler (jamais de modification du passé).
   - Lien à lire : M23.6 (Nprojet, `TODO.md`) : retour fournisseur ou correction de réception, « BTK décide d'abord ».
 - [ ] **E9. Fiche de suivi par employé** pour le responsable et le chef d'équipe : présences, retards, absences, heures ou quantités, validations en attente. Le chef d'équipe ne voit que son équipe. Les salaires restent cachés aux rôles non autorisés.
