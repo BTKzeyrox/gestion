@@ -67,8 +67,22 @@ Le site est basé sur des **tâches**. Un employé payé **à l'heure** voit enc
   - **Pour l'utiliser** : créer un type de travail avec la mesure « le montant vendu » et la paie « commission » (Réglages > Conditions), puis régler le pourcentage. Les modèles d'entreprise prêts à l'emploi n'en contiennent pas encore.
   - [ ] À tester sur le site en ligne (après Vercel) : créer le type, saisir une vente, valider, voir le montant dans la paie.
   - [x] (25/11) **Serveur déployé** : `df-api` version 3 sur le projet `blvuwirzmtmlehafnvew`, petit `index.ts` qui importe le code du commit `a4cbdaa0adb57a090437dfa692db60d2f3d22460` ; `signup-info` répond en JSON et la connexion admin donne 200. `df-restore` et `df-assistant` restent au commit `008606d` (inchangés). **À chaque nouveau changement du serveur, redéployer `df-api` au nouveau commit.**
-- [ ] **E8. Stock à la validation** : le stock monte ou baisse tout seul, avec un historique qu'on peut contrôler (jamais de modification du passé).
-  - Lien à lire : M23.6 (Nprojet, `TODO.md`) : retour fournisseur ou correction de réception, « BTK décide d'abord ».
+- [ ] **E8. Stock à la validation : RÉGLABLE par chaque entreprise** (décision de BTK, 25/11 : « je ne sais pas quel produit ni quel type de travail, ce n'est pas pour une seule entreprise : il faut plusieurs options »).
+  - **Règle de conception :** le site n'impose rien. **Par défaut, aucun lien avec le stock.** Chaque entreprise choisit, **type de travail par type de travail**, parmi les options ci-dessous.
+  - **Les options d'un type de travail** (champ facultatif `stock` du type) :
+    1. **Aucun lien** (par défaut).
+    2. **Entrée : la production fait monter le stock** d'un produit choisi dans le stock de l'entreprise (quantité faite moins refusées, ou quantité de la ligne × un coefficient).
+    3. **Sortie : le travail consomme un produit** : le stock baisse de (quantité × quantité de produit par unité faite).
+    4. **Signal seulement :** aucun mouvement, juste un avertissement si l'écart dépasse le seuil `stock_gap_pct` (existe déjà, par défaut 10 %).
+  - **Sécurité (à respecter) :**
+    - Le mouvement n'est créé que si le validateur peut écrire le stock (l'admin ; le stock est réservé à l'admin côté serveur).
+    - **Jamais bloquant** : si le produit n'existe plus ou si le stock est insuffisant, la ligne est validée quand même et un avertissement « mouvement de stock non fait » s'affiche. On ne perd pas une validation à cause du stock.
+    - **Jamais en double** : le mouvement garde l'identifiant de la ligne (`post_id`) ; une ligne ne crée qu'un seul mouvement, même si la validation est rejouée. Une ligne refusée ou annulée n'en crée aucun.
+  - **Ce qu'il faut toucher :** `WorkType` et sa vérification (`workTypes.ts`, `customWorkTypes.ts`) ; le **filtre serveur des types de travail** (`df-api/index.ts`, `check:company` doit rester vert) ; `StockMove` (champ `post_id`) et son **filtre serveur** (bloc STOCK, `check-stock.ts`) ; le point de validation côté site (`decidePostNow`) ; le formulaire de type de travail (`CompanyConditions.tsx`). Le serveur est à redéployer (méthode du petit `index.ts`).
+  - [ ] Étape 1 : modèle et vérification (client et serveur), avec contrôles.
+  - [ ] Étape 2 : mouvement créé à la validation (idempotent, non bloquant) et avertissement à l'écran.
+  - [ ] Étape 3 : formulaire de réglage (option, produit, coefficient) dans les conditions de l'entreprise.
+  - [ ] Retour fournisseur (M23.6) : reste une décision séparée, hors de E8.
 - [ ] **E9. Fiche de suivi par employé** pour le responsable et le chef d'équipe : présences, retards, absences, heures ou quantités, validations en attente. Le chef d'équipe ne voit que son équipe. Les salaires restent cachés aux rôles non autorisés.
 
 ## 4. À décider avec BTK
@@ -76,7 +90,7 @@ Le site est basé sur des **tâches**. Un employé payé **à l'heure** voit enc
 - [ ] **Extras** : commission ou prime en plus du type de base, ou un seul type de paie par employé ? (proposition : un type de base, plus des extras)
 - [ ] **Changement de type de paie** : que deviennent les anciens jours ? (proposition : ils restent comme avant, seuls les nouveaux jours suivent la nouvelle règle)
 - [ ] **Retour fournisseur** (M23.6) : sortie de stock avec dépense inverse, ou correction de la réception avec un motif ?
-- [ ] **Stock** : quels types de paie ou de travail font monter le stock, lesquels le font baisser ?
+- [x] **Stock** : réglé le 25/11 par BTK : ce n'est pas à nous de décider, chaque entreprise choisit par type de travail (voir E8).
 - [ ] **Idées pour plus tard** : prime à l'objectif, prix par palier, heures supplémentaires, forfait par projet, tarif par client, retenues ou pénalités.
 
 ## 5. Rappels
