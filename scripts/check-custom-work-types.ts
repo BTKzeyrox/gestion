@@ -52,5 +52,21 @@ const st = readStoreSource(), ui = readFileSync('src/components/CustomWorkTypes.
 ok(/saveCustomWorkType[\s\S]*role !== 'admin'/.test(st) && /removeCustomWorkType[\s\S]*role !== 'admin'/.test(st), 'magasin : créer et supprimer un type = responsable seulement');
 ok(/sec\.id === 'work' && <CustomWorkTypes/.test(cc) && /data-cwt-save/.test(ui), 'Réglages : le formulaire est dans la section « Types de travail et paie » (donc caché module fermé)');
 ok(/getCustomWorkTypes\(\)/.test(ws), 'Feuille du jour : propose aussi les types créés à la main');
+// Commission : un type « montant vendu » payé « commission » est accepté ; les mauvais mélanges sont refusés (site et serveur identiques)
+const sale = { id: 'c-vente', name: { fr: 'Vente', en: 'Sale' }, measure: 'sales', pay: 'commission', entry: ['admin', 'team_lead'] };
+const both = (x: any) => [cwValidate(x), S.cwValidate(x)];
+ok(both(sale).every((r: any) => r.ok && r.value.measure === 'sales' && r.value.pay === 'commission' && !r.value.unit), 'commission : le montant vendu payé à la commission est accepté (sans unité)');
+ok(both({ ...sale, pay: 'mission' }).every((r: any) => !r.ok && r.error === 'incompatible') && both({ ...sale, measure: 'presence' }).every((r: any) => !r.ok && r.error === 'incompatible') && both({ ...sale, measure: 'quantity', unit: { fr: 'u', en: 'u' } }).every((r: any) => !r.ok && r.error === 'incompatible'), 'commission : le montant vendu ne va qu\'avec la commission, et la commission qu\'avec le montant vendu');
+ok(both({ ...sale, pay: 'fixed' }).every((r: any) => r.ok), 'un salaire fixe va toujours avec tout, même le montant vendu');
+// Lien facultatif avec le stock (réglé par chaque entreprise)
+const piece = { ...good };
+const withStock = (stock: any) => ({ ...piece, stock });
+ok(both(piece).every((r: any) => r.ok && r.value.stock === undefined), 'stock : sans réglage, aucun lien (par défaut)');
+ok(both(withStock({ mode: 'in', product_id: 'prod-abc123', per_unit: 1 })).every((r: any) => r.ok && r.value.stock.mode === 'in' && r.value.stock.product_id === 'prod-abc123' && r.value.stock.per_unit === 1), 'stock : entrée (la production fait monter le stock) acceptée');
+ok(both(withStock({ mode: 'out', product_id: 'prod-abc123', per_unit: 0.25 })).every((r: any) => r.ok && r.value.stock.mode === 'out' && r.value.stock.per_unit === 0.25), 'stock : sortie (le travail consomme un produit) acceptée, avec une quantité par unité');
+ok(both(withStock({ mode: 'gap', product_id: 'n\'importe quoi', per_unit: 99 })).every((r: any) => r.ok && JSON.stringify(r.value.stock) === '{"mode":"gap"}'), 'stock : « signal seulement » ne garde que le mode');
+ok([null, 'x', 5, { mode: 'autre' }, { mode: 'in' }, { mode: 'in', product_id: 'abc', per_unit: 1 }, { mode: 'in', product_id: 'prod-abc123', per_unit: 0 }, { mode: 'out', product_id: 'prod-abc123', per_unit: -2 }, { mode: 'out', product_id: 'prod-abc123', per_unit: NaN }, { mode: 'in', product_id: 'prod-abc123', per_unit: 2000000 }, { mode: 'in', product_id: 'prod-<script>', per_unit: 1 }].filter(x => x !== null).every(x => both(withStock(x)).every((r: any) => !r.ok && r.error === 'stock')) && both(withStock(null)).every((r: any) => r.ok), 'stock : un réglage faux est refusé (erreur « stock »), jamais à moitié gardé');
+ok(both({ ...sale, stock: { mode: 'in', product_id: 'prod-abc123', per_unit: 1 } }).every((r: any) => !r.ok && r.error === 'stock') && both({ id: 'c-jour', name: { fr: 'Jour', en: 'Day' }, measure: 'presence', pay: 'day', entry: ['admin'], stock: { mode: 'gap' } }).every((r: any) => !r.ok && r.error === 'stock'), 'stock : seulement pour un type mesuré par une quantité');
+ok(both(withStock({ mode: 'in', product_id: 'prod-abc123', per_unit: 1.23456 })).every((r: any) => r.ok && r.value.stock.per_unit === 1.235), 'stock : la quantité par unité est arrondie à 3 décimales');
 console.log(fails ? `\n${fails} échec(s)` : '\nTout est bon.');
 process.exit(fails ? 1 : 0);

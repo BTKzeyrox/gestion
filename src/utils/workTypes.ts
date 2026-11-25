@@ -121,7 +121,9 @@ export function payAmount(mode: PayMode, rate: unknown, d: PayData): number {
 export const resolvePayMode = (employeeMode: unknown, companyMode: unknown): PayMode => (isPayMode(employeeMode) ? employeeMode : isPayMode(companyMode) ? companyMode : DEFAULT_PAY_MODE);
 
 // ---------- Un type de travail ----------
-export interface WorkType { id: string; name: Bi; measure: Measure; pay: PayMode; entry: EntryBy[]; unit?: Bi }
+/** Lien facultatif avec le stock, réglé par chaque entreprise : « in » = la production fait monter le stock d'un produit ; « out » = le travail consomme un produit ; « gap » = seulement un signal d'écart. Absent = aucun lien (par défaut). */
+export type WorkStock = { mode: 'in' | 'out'; product_id: string; per_unit: number } | { mode: 'gap' };
+export interface WorkType { id: string; name: Bi; measure: Measure; pay: PayMode; entry: EntryBy[]; unit?: Bi; stock?: WorkStock }
 
 /** Ce qui va ensemble : une quantité se paie à la pièce ; la présence se paie au jour ou à l'heure ; des preuves ou des tâches se paient à la mission ; un salaire fixe va avec tout. */
 export function compatible(measure: Measure, pay: PayMode): boolean {
@@ -133,7 +135,7 @@ export function compatible(measure: Measure, pay: PayMode): boolean {
 }
 const cleanText = (v: unknown, max: number): string => String(v ?? '').replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max);
 
-export type WorkTypeCheck = { ok: true; value: WorkType } | { ok: false; error: 'id' | 'name' | 'measure' | 'pay' | 'entry' | 'unit' | 'incompatible' };
+export type WorkTypeCheck = { ok: true; value: WorkType } | { ok: false; error: 'id' | 'name' | 'measure' | 'pay' | 'entry' | 'unit' | 'incompatible' | 'stock' };
 /** Vérifie (et nettoie) un type de travail créé à la main. L'erreur dit quel champ est faux : l'écran peut l'afficher. */
 export function validateWorkType(x: any): WorkTypeCheck {
   if (!x || typeof x !== 'object') return { ok: false, error: 'id' };

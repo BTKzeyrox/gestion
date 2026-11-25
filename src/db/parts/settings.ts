@@ -38,7 +38,7 @@ export const settingsMethods = defineMethods({
     const slug = String(d?.name?.fr || 'type').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 18) || 'type';
     let id = `c-${slug.length < 2 ? slug + '-type' : slug}`; for (let i = 2; list.some(t => t.id === id); i++) id = `c-${slug}-${i}`;
     const v = cwValidate({ ...d, id });
-    if (!v.ok) return { success: false, error: ({ id: 'Nom impossible.', name: 'Donne un nom en français ET en anglais.', measure: 'Mesure inconnue.', pay: 'Mode de paie inconnu.', entry: 'Choisis qui saisit.', incompatible: 'Cette mesure ne va pas avec ce mode de paie.', unit: 'Donne l\'unité en français ET en anglais (ex : boîte / box).' } as Record<string, string>)[v.error] || 'Type refusé.' };
+    if (!v.ok) return { success: false, error: ({ id: 'Nom impossible.', name: 'Donne un nom en français ET en anglais.', measure: 'Mesure inconnue.', pay: 'Mode de paie inconnu.', entry: 'Choisis qui saisit.', stock: 'Réglage du stock faux (produit, ou quantité par unité).', incompatible: 'Cette mesure ne va pas avec ce mode de paie.', unit: 'Donne l\'unité en français ET en anglais (ex : boîte / box).' } as Record<string, string>)[v.error] || 'Type refusé.' };
     this.updateSettings({ work_types: [...list, v.value] });
     return { success: true, type: v.value };
   },

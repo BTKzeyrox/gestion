@@ -2,12 +2,24 @@
 // Rangés dans les réglages (`work_types`), comme les modèles de mission. Le serveur (bloc CUSTOMWORK de df-api) a la même copie ; `npm run check:custom-work-types` les compare.
 // ===== BEGIN CUSTOMWORK =====
 export const CW_MAX_TYPES = 12;
-const cwMeasures = ["proof", "presence", "quantity", "tasks", "none"];
-const cwPays = ["mission", "day", "hour", "piece", "fixed"];
+const cwMeasures = ["proof", "presence", "quantity", "tasks", "sales", "none"];
+const cwPays = ["mission", "day", "hour", "piece", "commission", "fixed"];
 const cwEntries = ["employee", "team_lead", "admin", "paper"];
 const cwText = (v: unknown, max: number): string => String(v ?? "").replace(/[\u0000-\u001f\u007f]/g, " ").replace(/[<>]/g, "").replace(/\s+/g, " ").trim().slice(0, max);
 /** Ce qui va ensemble : une quantité se paie à la pièce ; la présence au jour ou à l'heure ; des preuves ou des tâches à la mission ; un salaire fixe va avec tout. */
-const cwCompatible = (measure: string, pay: string): boolean => pay === "fixed" ? true : pay === "piece" ? measure === "quantity" : pay === "day" || pay === "hour" ? measure === "presence" : measure === "proof" || measure === "tasks";
+const cwCompatible = (measure: string, pay: string): boolean => pay === "fixed" ? true : pay === "piece" ? measure === "quantity" : pay === "commission" ? measure === "sales" : pay === "day" || pay === "hour" ? measure === "presence" : measure === "proof" || measure === "tasks";
+/** Lien facultatif avec le stock (réglé par chaque entreprise, jamais imposé) : « in » = la production fait monter le stock d'un produit, « out » = le travail consomme un produit, « gap » = seulement un signal d'écart. Seulement pour un type mesuré par une quantité. Rien de valable = pas de lien. */
+const cwStock = (s: any, measure: string): { ok: boolean; value?: any } => {
+  if (s === undefined || s === null) return { ok: true };
+  if (typeof s !== "object" || measure !== "quantity") return { ok: false };
+  if (s.mode === "gap") return { ok: true, value: { mode: "gap" } };
+  if (s.mode !== "in" && s.mode !== "out") return { ok: false };
+  const pid = typeof s.product_id === "string" ? s.product_id.trim() : "";
+  if (!/^prod-[a-z0-9]{3,30}$/.test(pid)) return { ok: false };
+  const pu = Number(s.per_unit);
+  if (!isFinite(pu) || pu <= 0 || pu > 1000000) return { ok: false };
+  return { ok: true, value: { mode: s.mode, product_id: pid, per_unit: Math.round(pu * 1000) / 1000 } };
+};
 /** Un type de travail créé à la main : identifiant « c-… » (jamais celui d'un type du modèle), nom en français et en anglais, mesure, paie compatible, qui saisit, unité si on compte des pièces. */
 export function cwValidate(x: any): { ok: true; value: any } | { ok: false; error: string } {
   if (!x || typeof x !== "object") return { ok: false, error: "id" };
@@ -23,7 +35,9 @@ export function cwValidate(x: any): { ok: true; value: any } | { ok: false; erro
   const needsUnit = x.measure === "quantity" || x.pay === "piece";
   const ufr = cwText(x.unit && x.unit.fr, 20), uen = cwText(x.unit && x.unit.en, 20);
   if (needsUnit && (!ufr || !uen)) return { ok: false, error: "unit" };
-  return { ok: true, value: { id, name: { fr, en }, measure: x.measure, pay: x.pay, entry, ...(needsUnit ? { unit: { fr: ufr, en: uen } } : {}) } };
+  const st = cwStock(x.stock, x.measure);
+  if (!st.ok) return { ok: false, error: "stock" };
+  return { ok: true, value: { id, name: { fr, en }, measure: x.measure, pay: x.pay, entry, ...(needsUnit ? { unit: { fr: ufr, en: uen } } : {}), ...(st.value ? { stock: st.value } : {}) } };
 }
 /** La liste enregistrée : seuls les types valides, sans doublon d'identifiant, 12 au plus. Jamais d'erreur : ce qui est faux est ignoré. */
 export function cleanCustomTypes(list: unknown): any[] {
