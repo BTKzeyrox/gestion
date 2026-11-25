@@ -61,7 +61,7 @@ Puis lire dans l'ordre : `LIRE_EN_PREMIER.md` → `GUIDE_SITE.md` → ce fichier
 - **Aucun secret dans le dépôt** (tokens, clés, mots de passe). Les tokens se donnent dans le chat, se passent par variable d'environnement, et se **suppriment après le travail** : https://github.com/settings/tokens
 - Écrire sur GitHub avec le token de BTK et `git` dans le terminal, jamais avec le connecteur. Un commit clair par sujet, `npm run build` et `npm run check:all` verts avant chaque envoi, `GUIDE_SITE.md` mis à jour dans le même commit (`npm run guide`).
 - Dire honnêtement ce qui est fait, testé ou non testé.
-- **Méthode des mises à niveau suivantes (24 nov.) : appliquer SEULEMENT la différence** entre l'ancien et le nouveau commit de Nprojet (`git diff <ancien> <nouveau> | git apply --3way`), jamais « tout remplacer » : `gestion` a maintenant son propre travail (suivi des employés E2 à E9 : `CalendarView.tsx`, `dayStatus.ts`…) qu'un remplacement total effacerait. Dernier commit de Nprojet repris : 5040b13.
+- **Règle de BTK (24 nov.) : un plan poussé n'est pas un ordre de coder.** `Nprojet` et `gestion` ont chacun leurs changements ; on pousse seulement le plan (ce qui a changé, en mots), jamais le code de l'autre, sauf demande de BTK. Dernier commit de Nprojet repris dans cette copie (avant cette règle) : 5040b13.
 - **Mise à niveau sur Nprojet : GARDER `TODO_SUIVI_PAIE.md`** (le TODO du suivi des employés, propre à `gestion`). Il a déjà été effacé 3 fois par des mises à niveau « tout remplacer ». Fichiers à garder en plus des comptes : `TODO_SUIVI_PAIE.md` et les fichiers de ce plan.
 
 ## 6. Limites connues (honnêteté)
