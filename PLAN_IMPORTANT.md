@@ -69,3 +69,5 @@ Puis lire dans l'ordre : `LIRE_EN_PREMIER.md` → `GUIDE_SITE.md` → ce fichier
 - Le **fuseau horaire** (UTC+3, Madagascar) est écrit à plusieurs endroits du code : un autre pays serait un vrai chantier.
 - Les **données** ne sont pas copiées : la copie est vide (structure seulement).
 - Le **déploiement du serveur** passe par la CLI Supabase (`supabase@3.2.0`, mode API) : non essayée sur un vrai projet.
+
+- **Plan seulement (25 nov.), pas de code repris :** `Nprojet` a un nouveau réglage de compte « Menu du téléphone » (barre du bas ou seulement le haut, synchronisé par compte, réglage `nav_mode`, serveur v91 sur la base de Nprojet). Rien n'est codé dans `gestion` ; à faire seulement si BTK le demande.
