@@ -59,7 +59,14 @@ Le site est basé sur des **tâches**. Un employé payé **à l'heure** voit enc
   - [ ] Le retard calculé sur l'heure d'envoi (aujourd'hui : début de la première mission) : à décider, car cela touche une règle de calcul.
 - [ ] **E5. Qui saisit, qui valide, par employé** : réglable par l'admin. Garder « personne ne valide sa propre saisie » et les règles actuelles (pas de date future, 100 lignes au plus par feuille).
 - [ ] **E6. Assistant de départ (premier contact)** : pose les questions une fois (type de paie par défaut, qui saisit, qui valide, présence, stock), puis l'admin ajuste chaque employé.
-- [ ] **E7. Commission en pourcentage** (nouveau type de paie ; les 5 autres existent déjà d'après la lecture du code).
+- [x] **E7. Commission en pourcentage** (24/11, décision A de BTK : `gestion` garde ses changements).
+  - Nouveau mode de paie `commission` : le « tarif » est un **pourcentage** (0 à 100) du **montant vendu** (`sales_ar`, entier, au plus 1 milliard d'Ar), arrondi à l'Ar. Un pourcentage au-dessus de 100 est ramené à 100. Sans montant, ou avec un montant faux ou hors limite : rien n'est payé.
+  - Fait : calcul (`workTypes.ts`, `postPay.ts`) et **sa copie dans le bloc DECIDE du serveur** (`df-api/index.ts`), réglage de l'entreprise `rate_commission_ar` (`companyRules.ts`, serveur, `CompanyConditions.tsx`, caché au comptable), pourcentage propre à un employé (`pay_rate_ar` avec `pay_mode: 'commission'`), saisie « Montant vendu (Ar) » dans la Feuille du jour (`WorksheetView.tsx`, `workEntry.ts` + serveur), texte de ligne « 20 000 Ar vendus », résumé de feuille.
+  - Contrôles : `check:payroll-modes` (37/37, serveur = site sur des milliers de cas, 6 cas précis de commission), `check:work-types` mis à jour (6 modes, 6 mesures, 5 tarifs). Aucun nouvel échec par rapport au départ.
+  - Une **mission normale reste payée au prix fixe** (règle d'or inchangée).
+  - **Pour l'utiliser** : créer un type de travail avec la mesure « le montant vendu » et la paie « commission » (Réglages > Conditions), puis régler le pourcentage. Les modèles d'entreprise prêts à l'emploi n'en contiennent pas encore.
+  - [ ] À tester sur le site en ligne (après Vercel) : créer le type, saisir une vente, valider, voir le montant dans la paie.
+  - [ ] Le serveur doit tourner avec ce code : déployer `df-api` au commit de E7 (méthode du petit `index.ts`).
 - [ ] **E8. Stock à la validation** : le stock monte ou baisse tout seul, avec un historique qu'on peut contrôler (jamais de modification du passé).
   - Lien à lire : M23.6 (Nprojet, `TODO.md`) : retour fournisseur ou correction de réception, « BTK décide d'abord ».
 - [ ] **E9. Fiche de suivi par employé** pour le responsable et le chef d'équipe : présences, retards, absences, heures ou quantités, validations en attente. Le chef d'équipe ne voit que son équipe. Les salaires restent cachés aux rôles non autorisés.

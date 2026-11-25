@@ -7,9 +7,9 @@ import type { Bi } from './siteSnapshot';
 
 const b = (fr: string, en: string): Bi => ({ fr, en });
 
-export const MEASURES = ['proof', 'presence', 'quantity', 'tasks', 'none'] as const;
+export const MEASURES = ['proof', 'presence', 'quantity', 'tasks', 'sales', 'none'] as const;
 export type Measure = typeof MEASURES[number];
-export const PAY_MODES = ['mission', 'day', 'hour', 'piece', 'fixed'] as const;
+export const PAY_MODES = ['mission', 'day', 'hour', 'piece', 'commission', 'fixed'] as const;
 export type PayMode = typeof PAY_MODES[number];
 export const ENTRY_BY = ['employee', 'team_lead', 'admin', 'paper'] as const;
 export type EntryBy = typeof ENTRY_BY[number];
@@ -19,10 +19,11 @@ export const MEASURE_LABEL: Record<Measure, Bi> = {
   presence: b('la présence (arrivée et départ)', 'presence (arrival and departure)'),
   quantity: b('la quantité produite', 'the quantity produced'),
   tasks: b('des tâches faites ou non', 'tasks done or not'),
+  sales: b('le montant vendu', 'the amount sold'),
   none: b('rien (salaire fixe)', 'nothing (fixed salary)'),
 };
 export const PAY_LABEL: Record<PayMode, Bi> = {
-  mission: b('par mission', 'per mission'), day: b('par jour', 'per day'), hour: b('par heure', 'per hour'), piece: b('par boîte ou pièce', 'per box or piece'), fixed: b('salaire fixe', 'fixed salary'),
+  mission: b('par mission', 'per mission'), day: b('par jour', 'per day'), hour: b('par heure', 'per hour'), piece: b('par boîte ou pièce', 'per box or piece'), commission: b('commission (pourcentage des ventes)', 'commission (percentage of sales)'), fixed: b('salaire fixe', 'fixed salary'),
 };
 export const ENTRY_LABEL: Record<EntryBy, Bi> = {
   employee: b('l\'employé, sur son appli', 'the employee, in the app'), team_lead: b('le chef d\'équipe', 'the team lead'), admin: b('le responsable', 'the manager'), paper: b('une feuille papier, saisie ensuite', 'a paper sheet, entered afterwards'),
@@ -37,6 +38,7 @@ export const isPayMode = (v: unknown): v is PayMode => typeof v === 'string' && 
 export const isEntryBy = (v: unknown): v is EntryBy => typeof v === 'string' && (ENTRY_BY as readonly string[]).includes(v);
 
 // ---------- Limites (une valeur absurde est refusée, jamais « corrigée » en silence) ----------
+export const MAX_SALES_AR = 1000000000; // montant vendu pour une personne et une journée (1 milliard d'Ar)
 export const MAX_QTY = 100000; // boîtes ou pièces pour une personne et une journée
 export const MAX_RATE_AR = 100000000; // 100 millions d'Ar : un prix ou un salaire plus grand est une faute de frappe
 export const MAX_HOURS_PER_DAY = 24;
@@ -100,6 +102,7 @@ export interface PayData {
   hours?: number; // heures travaillées (par heure)
   pieces?: number; // pièces ou boîtes faites (par pièce)
   rejected?: number; // pièces refusées ou abîmées : elles ne sont pas payées
+  sales?: number; // montant vendu en Ar (commission)
   periodShare?: number; // part de la période pour un salaire fixe : mois = 1, quinzaine = 0,5
 }
 const num = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : 0);
@@ -108,8 +111,9 @@ export const acceptedPieces = (pieces: unknown, rejected: unknown): number => Ma
 /** Montant en Ar, arrondi à l'Ar, jamais négatif, jamais NaN. Un tarif ou une quantité absurde donne 0 (et c'est le contrôle de saisie qui l'a déjà refusé). */
 export function payAmount(mode: PayMode, rate: unknown, d: PayData): number {
   const r = typeof rate === 'number' && Number.isFinite(rate) && rate >= 0 && rate <= MAX_RATE_AR ? rate : 0;
-  const units = mode === 'mission' ? num(d.missions) : mode === 'day' ? num(d.days) : mode === 'hour' ? num(d.hours) : mode === 'piece' ? acceptedPieces(d.pieces, d.rejected) : num(d.periodShare);
-  const amount = Math.round(units * r);
+  const units = mode === 'mission' ? num(d.missions) : mode === 'day' ? num(d.days) : mode === 'hour' ? num(d.hours) : mode === 'piece' ? acceptedPieces(d.pieces, d.rejected) : mode === 'commission' ? num(d.sales) : num(d.periodShare);
+  // Commission : le « tarif » est un POURCENTAGE (0 à 100) du montant vendu ; les autres modes : des Ar par unité.
+  const amount = mode === 'commission' ? Math.round(units * Math.min(r, 100) / 100) : Math.round(units * r);
   return Number.isFinite(amount) && amount > 0 ? amount : 0;
 }
 
@@ -123,6 +127,7 @@ export interface WorkType { id: string; name: Bi; measure: Measure; pay: PayMode
 export function compatible(measure: Measure, pay: PayMode): boolean {
   if (pay === 'fixed') return true;
   if (pay === 'piece') return measure === 'quantity';
+  if (pay === 'commission') return measure === 'sales';
   if (pay === 'day' || pay === 'hour') return measure === 'presence';
   return measure === 'proof' || measure === 'tasks'; // mission
 }

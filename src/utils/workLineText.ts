@@ -18,6 +18,7 @@ export function workLineDetail(post: any): string {
     out.push(`${num(q)} faite${q > 1 ? 's' : ''}`);
     if (r > 0) out.push(`${num(r)} refusée${r > 1 ? 's' : ''}${q > 0 ? ` (${Math.round((r / q) * 100)} %)` : ''}`);
   }
+  if (post.sales_ar !== undefined && post.sales_ar !== null) out.push(`${num(post.sales_ar)} Ar vendus`); // commission : montant vendu
   return out.join(' · ');
 }
 

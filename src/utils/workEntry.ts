@@ -26,7 +26,7 @@ const weNum = (v: unknown, max: number): number | null | undefined => {
 export const weCanEnterFor = (me: any, emp: any): boolean => !!me && !!emp && isOperator(emp.role) && emp.id !== me.id && (me.role === "admin" || (me.role === "team_lead" && sameTeam(me, emp)));
 const weSafe = (s: string): string => s.replace(/[^A-Za-z0-9_-]/g, "_");
 /**
- * Une feuille du jour : { date, type_label?, lines: [{ employee_id, work_type, presence?, hours?, quantity?, rejected?, late_minutes?, absence_reason? }] }.
+ * Une feuille du jour : { date, type_label?, lines: [{ employee_id, work_type, presence?, hours?, quantity?, rejected?, sales_ar?, late_minutes?, absence_reason? }] }.
  * Renvoie { ok:false, error } si la feuille entière est refusée, sinon { ok:true, saved, failed, users, validated } : chaque ligne est enregistrée ou refusée avec son numéro et sa raison.
  * Un employé, un jour, un type de travail = UNE seule ligne (identifiant fixe) ; une ligne refusée avant peut être ressaisie.
  * Saisie du responsable : validée tout de suite (montant calculé maintenant). Saisie du Chef d'équipe : en attente du responsable (personne ne valide sa propre saisie : voir `weSelfEntered`).
@@ -61,11 +61,12 @@ export function planWorkEntries(me: any, users: any[], existing: any[], sheet: a
     const hours = weNum(raw.hours, 24); if (hours === null) return bad("hours");
     const quantity = weNum(raw.quantity, 100000); if (quantity === null) return bad("quantity");
     const rejected = weNum(raw.rejected, 100000); if (rejected === null) return bad("rejected");
+const sales = weNum(raw.sales_ar, 1e9); if (sales === null || (sales !== undefined && sales !== Math.floor(sales))) return bad("sales_ar"); // montant vendu en Ar (commission), entier
     if ((rejected || 0) > (quantity || 0)) return bad("rejected");
     const lateMin = weNum(raw.late_minutes, 600); if (lateMin === null || (lateMin !== undefined && lateMin !== Math.floor(lateMin))) return bad("late_minutes");
     let reason: string | undefined;
     if (raw.absence_reason !== undefined && raw.absence_reason !== null && raw.absence_reason !== "") { if (typeof raw.absence_reason !== "string" || !WE_ABSENCE.includes(raw.absence_reason)) return bad("absence_reason"); reason = raw.absence_reason; }
-    if (presence === undefined && !(hours && hours > 0) && !(quantity && quantity > 0)) return bad("empty");
+    if (presence === undefined && !(hours && hours > 0) && !(quantity && quantity > 0) && !(sales && sales > 0)) return bad("empty");
     const id = "we-" + sheet.date + "-" + weSafe(empId) + "-" + type;
     if (id.length > 80) return bad("bad");
     if (taken.has(id)) return bad("duplicate");
@@ -79,6 +80,7 @@ export function planWorkEntries(me: any, users: any[], existing: any[], sheet: a
     if (presence !== undefined) post.presence = presence;
     if (hours !== undefined) post.hours = hours;
     if (quantity !== undefined) post.quantity = quantity;
+if (sales !== undefined) post.sales_ar = sales;
     if (rejected !== undefined) post.rejected = rejected;
     if (presence === "late" && lateMin !== undefined && lateMin > 0) post.late_minutes = lateMin; // retard en minutes (retiré de la paie selon le réglage)
     if (presence === "absent" && reason !== undefined) post.absence_reason = reason; // motif (payé ou non selon le réglage)

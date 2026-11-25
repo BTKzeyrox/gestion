@@ -18,7 +18,7 @@ import { missingPeople, dayTotals, copyFromDay } from '../utils/sheetDay';
 import { remAddDays } from '../utils/reminderRules';
 import { paperSheetHtml, printPaperSheet, applyGroup } from '../utils/paperSheet';
 
-type Row = { presence?: string; hours?: string; quantity?: string; rejected?: string; late_minutes?: string; absence_reason?: string };
+type Row = { presence?: string; hours?: string; quantity?: string; rejected?: string; sales?: string; late_minutes?: string; absence_reason?: string };
 const REASON_FR: Record<string, string> = {
   employee: "Cet opérateur n'est pas dans ta liste", type: 'Type de travail inconnu', presence: 'Présence inconnue', hours: 'Heures : 0 à 24', late_minutes: 'Minutes de retard : un nombre entier de 0 à 600', absence_reason: "Motif d'absence inconnu", quantity: 'Quantité impossible (0 à 100 000)',
   rejected: 'Refusées : pas plus que les faites', empty: 'Rien à enregistrer', duplicate: 'Déjà saisi pour ce jour et ce type', bad: 'Ligne illisible',
@@ -33,7 +33,7 @@ const readDraft = (k: string): Record<string, Row> => { try { const v = JSON.par
 const saveDraft = (k: string, v: Record<string, Row>) => { try { if (Object.keys(v).length) localStorage.setItem(k, JSON.stringify(v)); else localStorage.removeItem(k); } catch { /* sans stockage : pas de brouillon */ } };
 
 /** Une feuille ne sert qu'aux types où l'on note la présence, les heures ou la quantité. Le responsable les voit tous ; le Chef d'équipe seulement ceux qui lui sont ouverts. */
-const sheetTypes = (types: WorkType[], role: string): WorkType[] => types.filter(t => (t.measure === 'presence' || t.measure === 'quantity') && (role === 'admin' || t.entry.includes(role as any)));
+const sheetTypes = (types: WorkType[], role: string): WorkType[] => types.filter(t => (t.measure === 'presence' || t.measure === 'quantity' || t.measure === 'sales') && (role === 'admin' || t.entry.includes(role as any)));
 
 export const WorksheetView: React.FC<{ currentUser: User }> = ({ currentUser }) => {
   const app = useApp(); const L = app.theme === 'light'; const en = app.lang === 'en'; const t = (fr: string, e: string) => (en ? e : fr);
@@ -60,8 +60,9 @@ export const WorksheetView: React.FC<{ currentUser: User }> = ({ currentUser }) 
 
   const showHours = !!type && type.measure === 'presence' && type.pay === 'hour';
   const showQty = !!type && type.measure === 'quantity';
+  const showSales = !!type && type.measure === 'sales'; // commission : montant vendu en Ar
   const showPresence = !!type && type.measure === 'presence';
-  const filled = (r?: Row) => !!r && !!(r.presence || (r.hours || '').trim() || (r.quantity || '').trim());
+  const filled = (r?: Row) => !!r && !!(r.presence || (r.hours || '').trim() || (r.quantity || '').trim() || (r.sales || '').trim());
 
   const sum = useMemo(() => (type ? summarizeSheet(rows, people, type.id, me, db.getSettings()) : null), [rows, people, type, me.role]); // eslint-disable-line react-hooks/exhaustive-deps
   const money = (n: number) => `${n.toLocaleString('fr-FR')} Ar`;
@@ -89,7 +90,7 @@ export const WorksheetView: React.FC<{ currentUser: User }> = ({ currentUser }) 
     const entries = people.filter(u => filled(rows[u.id]));
     if (entries.length === 0) { setMsg({ ok: false, text: t('Remplis au moins une ligne.', 'Fill in at least one line.') }); return; }
     setBusy(true); setMsg(null);
-    const r = await db.addWorkEntries({ date, type_label: type.name.fr, lines: entries.map(u => ({ employee_id: u.id, work_type: type.id, presence: rows[u.id].presence, hours: rows[u.id].hours, quantity: rows[u.id].quantity, rejected: rows[u.id].rejected, late_minutes: rows[u.id].presence === 'late' ? rows[u.id].late_minutes : undefined, absence_reason: rows[u.id].presence === 'absent' ? rows[u.id].absence_reason : undefined })) });
+    const r = await db.addWorkEntries({ date, type_label: type.name.fr, lines: entries.map(u => ({ employee_id: u.id, work_type: type.id, presence: rows[u.id].presence, hours: rows[u.id].hours, quantity: rows[u.id].quantity, rejected: rows[u.id].rejected, sales_ar: rows[u.id].sales, late_minutes: rows[u.id].presence === 'late' ? rows[u.id].late_minutes : undefined, absence_reason: rows[u.id].presence === 'absent' ? rows[u.id].absence_reason : undefined })) });
     setBusy(false);
     if (!r.ok) { setMsg({ ok: false, text: r.error === 'Erreur.' || !r.error ? t('Erreur : ta saisie est gardée sur cet appareil, réessaie.', 'Error: your entry is kept on this device, try again.') : ((en ? SHEET_ERR_EN : SHEET_ERR)[r.error] || r.error) }); return; }
     if (r.queued) { setRows({}); saveDraft(key, {}); setMsg({ ok: true, text: en ? SHEET_QUEUED_TEXT.en : SHEET_QUEUED_TEXT.fr }); return; } // M27.9 : sans réseau, la feuille est gardée sur l'appareil (le brouillon n'est plus nécessaire)
@@ -177,6 +178,7 @@ export const WorksheetView: React.FC<{ currentUser: User }> = ({ currentUser }) 
                         {showHours && <label className="block space-y-1 col-span-2"><span className={label}>{t('Heures', 'Hours')}</span><input inputMode="decimal" data-field="hours" value={r.hours || ''} onChange={e => set(u.id, { hours: e.target.value })} className={input} placeholder="8" /></label>}
                         {showQty && <label className="block space-y-1"><span className={label}>{t('Quantité', 'Quantity')}{type?.unit ? ` (${en ? type.unit.en : type.unit.fr})` : ''}</span><input inputMode="decimal" data-field="quantity" value={r.quantity || ''} onChange={e => set(u.id, { quantity: e.target.value })} className={input} placeholder="0" /></label>}
                         {showQty && <label className="block space-y-1"><span className={label}>{t('Refusées', 'Rejected')}</span><input inputMode="decimal" data-field="rejected" value={r.rejected || ''} onChange={e => set(u.id, { rejected: e.target.value })} className={input} placeholder="0" /></label>}
+                        {showSales && <label className="block space-y-1"><span className={label}>{t('Montant vendu (Ar)', 'Amount sold (Ar)')}</span><input inputMode="numeric" data-field="sales" value={r.sales || ''} onChange={e => set(u.id, { sales: e.target.value })} className={input} placeholder="0" /></label>}
                       </div>
                     )}
                   </div>

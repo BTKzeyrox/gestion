@@ -28,13 +28,13 @@ const NOW = '2026-11-05T10:00:00.000Z';
 const W = (mode: unknown, extra: any = {}) => ({ price_per_mission: 5000, company: { work: { pay_default: mode, rate_day_ar: 12000, rate_hour_ar: 2000, rate_piece_ar: 150, rate_fixed_ar: 400000, ...extra } } });
 const settingsList: any[] = [
   { price_per_mission: 5000 }, { price_per_mission: 0 }, { price_per_mission: -5 }, { price_per_mission: 'abc' }, { price_per_mission: NaN }, {}, undefined, null,
-  W('mission'), W('day'), W('hour'), W('piece'), W('fixed'), W('weekly'), W(undefined), W(null), W(5),
+  W('mission'), W('day'), W('hour'), W('piece'), W('commission', { rate_commission_ar: 5 }), W('commission'), W('commission', { rate_commission_ar: 250 }), W('commission', { rate_commission_ar: -5 }), W('commission', { rate_commission_ar: NaN }), W('commission', { rate_commission_ar: 2.5 }), W('fixed'), W('weekly'), W(undefined), W(null), W(5),
   W('piece', { rate_piece_ar: 0 }), W('piece', { rate_piece_ar: -5 }), W('piece', { rate_piece_ar: NaN }), W('piece', { rate_piece_ar: Infinity }), W('piece', { rate_piece_ar: '150' }), W('piece', { rate_piece_ar: 1e9 }), W('piece', { rate_piece_ar: 1e8 }),
   W('day', { rate_day_ar: 0 }), W('hour', { rate_hour_ar: 0.5 }),
   { price_per_mission: 5000, company: null }, { price_per_mission: 5000, company: { work: null } }, { price_per_mission: 5000, company: 'x' }, { price_per_mission: 5000, company: { work: { pay_default: 'piece' } } },
   { price_per_mission: 123.6, company: { work: { pay_default: 'mission' } } },
 ];
-const employees: any[] = [null, undefined, {}, { pay_mode: 'piece' }, { pay_mode: 'day' }, { pay_mode: 'hour' }, { pay_mode: 'fixed' }, { pay_mode: 'mission' }, { pay_mode: 'x' }, { pay_mode: 5 },
+const employees: any[] = [null, undefined, {}, { pay_mode: 'piece' }, { pay_mode: 'day' }, { pay_mode: 'hour' }, { pay_mode: 'fixed' }, { pay_mode: 'commission' }, { pay_mode: 'commission', pay_rate_ar: 8 }, { pay_mode: 'mission' }, { pay_mode: 'x' }, { pay_mode: 5 },
   { pay_rate_ar: 200 }, { pay_mode: 'piece', pay_rate_ar: 200 }, { pay_mode: 'day', pay_rate_ar: 15000 }, { pay_rate_ar: -5 }, { pay_rate_ar: 0 }, { pay_rate_ar: 1e9 }, { pay_rate_ar: '200' }, { pay_rate_ar: NaN }, { pay_rate_ar: 1e8 }];
 const base = { id: 'p1', employee_id: 'e1', status: 'pending_end', client_name: 'Acme', post_number: 'P1', initial_score: 10, current_score: 40, final_score: 40 };
 const normal: any[] = [{ ...base }, { ...base, work_type: undefined }, { ...base, work_type: '' }, { ...base, work_type: null }, { ...base, work_type: 5 }, { ...base, work_type: {} }, { ...base, work_type: 0 },
@@ -46,6 +46,7 @@ for (const quantity of [undefined, 0, 1, 100, 200, 100000, 100001, -5, NaN, Infi
 for (const presence of [undefined, 'present', 'late', 'half', 'absent', 'PRESENT', 1, null, '']) lines.push(work({ presence }));
 for (const hours of [undefined, 0, 1, 8.5, 24, 24.01, 25, -1, NaN, Infinity, '8', null]) lines.push(work({ hours }));
 lines.push(work({ work_type: ' ' }), work({ work_type: 'x', quantity: 50, rejected: 5, hours: 6, presence: 'half' }), work({ work_type: 'x', quantity: 1e5, rejected: 0, hours: 24, presence: 'present' }));
+for (const sales_ar of [undefined, 0, 1, 20000, 1500000, 999999999, 1e9, 1000000001, -5, NaN, Infinity, '20000', null, 12345.6]) lines.push(work({ work_type: 'vente', sales_ar }));
 const contract = { client_price_ar: 9000, current_score: 10 };
 
 // ---------- 1) Serveur = site, sur tout ----------
@@ -130,5 +131,12 @@ ok(demoSame, `démo = serveur sur 6 modes (à la boîte, à l'heure, à la journ
 const pp = readFileSync('src/utils/postPay.ts', 'utf8');
 ok(!/fetch\(|XMLHttpRequest|import .*db\/store|localStorage|Date\.now\(\)|new Date\(\)|setTimeout|Math\.random/.test(pp), 'postPay.ts : règles pures (aucun réseau, aucune donnée, aucune horloge, aucun hasard)');
 ok(/BEGIN DECIDE/.test(src) && /function decPostPay/.test(grab('DECIDE')) && /decPostPay\(post, employee, settings\)/.test(grab('DECIDE')) && !/price_per_mission\)\)\);\n  return \{\n    ok: true, kind: "end_ok"/.test(grab('DECIDE')), 'serveur : la décision appelle decPostPay (l\'ancien calcul direct a disparu du bloc)');
+// Commission : le « tarif » est un POURCENTAGE du montant vendu (0 à 100), arrondi à l'Ar ; un montant hors limite ou faux ne paie rien
+ok(pay(work({ sales_ar: 20000 }), {}, W('commission', { rate_commission_ar: 5 })).payAr === 1000, 'commission : 5 % de 20 000 Ar vendus = 1 000 Ar');
+ok(pay(work({ sales_ar: 20000 }), { pay_mode: 'commission', pay_rate_ar: 8 }, W('day')).payAr === 1600, 'commission : le mode et le pourcentage propres à l\'employé passent avant ceux de l\'entreprise (8 % de 20 000 = 1 600 Ar)');
+ok(pay(work({ sales_ar: 20000 }), {}, W('commission', { rate_commission_ar: 250 })).payAr === 20000, 'commission : un pourcentage au-dessus de 100 est ramené à 100 %');
+ok(pay(work({ sales_ar: 333 }), {}, W('commission', { rate_commission_ar: 2.5 })).payAr === 8, 'commission : le résultat est arrondi à l\'Ar (2,5 % de 333 = 8 Ar)');
+ok(pay(work({}), {}, W('commission', { rate_commission_ar: 5 })).payAr === 0 && pay(work({ sales_ar: 1000000001 }), {}, W('commission', { rate_commission_ar: 5 })).payAr === 0 && pay(work({ sales_ar: -5 }), {}, W('commission', { rate_commission_ar: 5 })).payAr === 0, 'commission : sans montant vendu, ou avec un montant faux ou hors limite, rien n\'est payé');
+ok(pay({ ...base, sales_ar: 20000 }, {}, W('commission', { rate_commission_ar: 5 })).payAr === 5000, 'une mission normale (sans type de travail) reste payée au prix fixe, même en mode commission');
 console.log(`\n${n - fails}/${n} contrôles réussis`);
 if (fails) process.exit(1);

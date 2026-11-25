@@ -25,7 +25,7 @@ export function workRuleLines(t: WorkType, work: any = {}): RuleLine[] {
   out.push(t.measure === 'proof'
     ? { key: 'calendar', fr: 'Calendrier : suit les missions (début, fin, score).', en: 'Calendar: follows the missions (start, end, score).' }
     : { key: 'calendar', fr: 'Calendrier : apparaît dans « Travail saisi » du jour, jamais comme une mission ; une saisie encore sur le téléphone est marquée « pas encore envoyée ».', en: 'Calendar: shown in "Work entered" of the day, never as a mission; an entry still on the phone is marked "not sent yet".' });
-  const rateKey = t.pay === 'day' ? 'rate_day_ar' : t.pay === 'hour' ? 'rate_hour_ar' : t.pay === 'piece' ? 'rate_piece_ar' : t.pay === 'fixed' ? 'rate_fixed_ar' : '';
+  const rateKey = t.pay === 'day' ? 'rate_day_ar' : t.pay === 'hour' ? 'rate_hour_ar' : t.pay === 'piece' ? 'rate_piece_ar' : t.pay === 'commission' ? 'rate_commission_ar' : t.pay === 'fixed' ? 'rate_fixed_ar' : '';
   const rate = rateKey ? Number(w[rateKey]) || 0 : 0;
   const payMode = isPayMode(t.pay) ? t.pay : 'mission';
   out.push(rateKey

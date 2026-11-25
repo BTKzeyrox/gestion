@@ -115,7 +115,7 @@ export interface CompanySettings {
   texts: { internal_rules: string; customer_terms: string };
   modules: { hidden: string }; // pages cachées du menu (liste d'identifiants séparés par des virgules) ; les opérateurs la reçoivent aussi
   watch: { validate_hours: number; active_no_end_hours: number; late_count: number; late_window_days: number; absent_streak_days: number; refusal_rate_pct: number; refusal_min_missions: number; min_periods: number; ignore_days: number; min_duration_minutes: number; advance_pending_days: number; inactive_days: number; strategic_silent_days: number; dormant_days: number; others_pct: number; backup_max_hours: number; error_hours: number }; // seuils de la Santé du site partagés par toute l'équipe d'admins ; 0 = valeur de départ
-  work: { business_model: string; pay_default: 'mission' | 'day' | 'hour' | 'piece' | 'fixed'; rate_day_ar: number; rate_hour_ar: number; rate_piece_ar: number; rate_fixed_ar: number; stock_gap_pct: number; stats_lines: 'money' | 'all' | 'none'; late_rule: 'never' | 'per_minute' | 'per_15'; absence_paid_sick: boolean; absence_paid_leave: boolean; absence_paid_none: boolean; absence_paid_other: boolean; sheet_reminder: 'on' | 'off'; sheet_reminder_hour: string }; // module 26 : types de travail et paie (jamais envoyé à un employé)
+  work: { business_model: string; pay_default: 'mission' | 'day' | 'hour' | 'piece' | 'commission' | 'fixed'; rate_day_ar: number; rate_hour_ar: number; rate_piece_ar: number; rate_commission_ar: number; rate_fixed_ar: number; stock_gap_pct: number; stats_lines: 'money' | 'all' | 'none'; late_rule: 'never' | 'per_minute' | 'per_15'; absence_paid_sick: boolean; absence_paid_leave: boolean; absence_paid_none: boolean; absence_paid_other: boolean; sheet_reminder: 'on' | 'off'; sheet_reminder_hour: string }; // module 26 : types de travail et paie (jamais envoyé à un employé)
 }
 
 export interface CompanyLogEntry {
@@ -152,7 +152,7 @@ export interface User {
   status: UserStatus;
   shift: ShiftType; // 'day' (08:00 - 18:00) or 'night' (20:00 - 06:00)
   entry_only?: boolean; // module 26 (M26.7) : suivi par saisie seulement (sans compte ni téléphone) ; posé par le serveur à la création, jamais modifiable ensuite
-  pay_mode?: 'mission' | 'day' | 'hour' | 'piece' | 'fixed'; // module 26 : mode de paie de CET employé (absent = celui de l'entreprise, sinon « par mission »)
+  pay_mode?: 'mission' | 'day' | 'hour' | 'piece' | 'commission' | 'fixed'; // module 26 : mode de paie de CET employé (absent = celui de l'entreprise, sinon « par mission »)
   pay_rate_ar?: number; // module 26 : son tarif (par jour, heure ou pièce, ou salaire fixe) ; absent = celui de l'entreprise
   is_online: boolean;
   team?: string; // équipe (texte court, choisi par l'admin) : un Chef d'équipe valide les sessions des opérateurs de la même équipe

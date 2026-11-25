@@ -57,7 +57,7 @@ const decValidPrice = (n: unknown): boolean => typeof n === "number" && isFinite
 const decNum = (v: unknown): number => { const n = Number(v); return isFinite(n) ? n : 0; };
 // Paie d'une session validée (module 26, M26.4). Copie de src/utils/postPay.ts, comparée par scripts/check-payroll-modes.ts.
 // Une mission NORMALE (sans work_type) est payée exactement comme avant (prix fixe par mission). Une LIGNE DE TRAVAIL est payée selon le mode : celui de l'employé, sinon celui de l'entreprise, sinon « par mission ».
-const DEC_PAY_MODES = ["mission", "day", "hour", "piece", "fixed"];
+const DEC_PAY_MODES = ["mission", "day", "hour", "piece", "commission", "fixed"];
 const DEC_ABSENCE = ["sick", "leave", "none", "other"];
 const decIsMode = (v: unknown): boolean => typeof v === "string" && DEC_PAY_MODES.includes(v);
 const decRate = (v: unknown): number => (typeof v === "number" && isFinite(v) && v > 0 && v <= 1e8 ? v : 0);
@@ -75,8 +75,9 @@ function decPostPay(post: any, employee: any, settings: any): number {
   let units = 0;
   if (mode === "day") { const p = post.presence; units = p === "present" || p === "late" ? 1 : p === "half" ? 0.5 : 0; }
   else if (mode === "hour") units = decUnits(post.hours, 24);
+  else if (mode === "commission") units = decUnits(post.sales_ar, 1e9); // commission : le « tarif » est un pourcentage du montant vendu
   else { const q = decUnits(post.quantity, 1e5), r = Math.min(decUnits(post.rejected, 1e5), q); units = Math.max(0, q - r); }
-  const amount = Math.round(units * rate);
+  const amount = mode === "commission" ? Math.round(units * Math.min(rate, 100) / 100) : Math.round(units * rate);
   const base = isFinite(amount) && amount > 0 ? amount : 0;
   // M27.8 : absence payée (selon le motif) et retard retiré (selon le réglage), paie « par jour » ou « par heure » seulement.
   if (mode === "day" || mode === "hour") {
@@ -210,7 +211,7 @@ const weNum = (v: unknown, max: number): number | null | undefined => {
 const weCanEnterFor = (me: any, emp: any): boolean => !!me && !!emp && isOperator(emp.role) && emp.id !== me.id && (me.role === "admin" || (me.role === "team_lead" && sameTeam(me, emp)));
 const weSafe = (s: string): string => s.replace(/[^A-Za-z0-9_-]/g, "_");
 /**
- * Une feuille du jour : { date, type_label?, lines: [{ employee_id, work_type, presence?, hours?, quantity?, rejected?, late_minutes?, absence_reason? }] }.
+ * Une feuille du jour : { date, type_label?, lines: [{ employee_id, work_type, presence?, hours?, quantity?, rejected?, sales_ar?, late_minutes?, absence_reason? }] }.
  * Renvoie { ok:false, error } si la feuille entière est refusée, sinon { ok:true, saved, failed, users, validated } : chaque ligne est enregistrée ou refusée avec son numéro et sa raison.
  * Un employé, un jour, un type de travail = UNE seule ligne (identifiant fixe) ; une ligne refusée avant peut être ressaisie.
  * Saisie du responsable : validée tout de suite (montant calculé maintenant). Saisie du Chef d'équipe : en attente du responsable (personne ne valide sa propre saisie : voir `weSelfEntered`).
@@ -245,11 +246,12 @@ function planWorkEntries(me: any, users: any[], existing: any[], sheet: any, set
     const hours = weNum(raw.hours, 24); if (hours === null) return bad("hours");
     const quantity = weNum(raw.quantity, 100000); if (quantity === null) return bad("quantity");
     const rejected = weNum(raw.rejected, 100000); if (rejected === null) return bad("rejected");
+    const sales = weNum(raw.sales_ar, 1e9); if (sales === null || (sales !== undefined && sales !== Math.floor(sales))) return bad("sales_ar"); // montant vendu en Ar (commission), entier
     if ((rejected || 0) > (quantity || 0)) return bad("rejected");
     const lateMin = weNum(raw.late_minutes, 600); if (lateMin === null || (lateMin !== undefined && lateMin !== Math.floor(lateMin))) return bad("late_minutes");
     let reason: string | undefined;
     if (raw.absence_reason !== undefined && raw.absence_reason !== null && raw.absence_reason !== "") { if (typeof raw.absence_reason !== "string" || !WE_ABSENCE.includes(raw.absence_reason)) return bad("absence_reason"); reason = raw.absence_reason; }
-    if (presence === undefined && !(hours && hours > 0) && !(quantity && quantity > 0)) return bad("empty");
+    if (presence === undefined && !(hours && hours > 0) && !(quantity && quantity > 0) && !(sales && sales > 0)) return bad("empty");
     const id = "we-" + sheet.date + "-" + weSafe(empId) + "-" + type;
     if (id.length > 80) return bad("bad");
     if (taken.has(id)) return bad("duplicate");
@@ -263,6 +265,7 @@ function planWorkEntries(me: any, users: any[], existing: any[], sheet: any, set
     if (presence !== undefined) post.presence = presence;
     if (hours !== undefined) post.hours = hours;
     if (quantity !== undefined) post.quantity = quantity;
+    if (sales !== undefined) post.sales_ar = sales;
     if (rejected !== undefined) post.rejected = rejected;
     if (presence === "late" && lateMin !== undefined && lateMin > 0) post.late_minutes = lateMin; // retard en minutes (retiré de la paie selon le réglage)
     if (presence === "absent" && reason !== undefined) post.absence_reason = reason; // motif (payé ou non selon le réglage)
@@ -2442,7 +2445,7 @@ const COMPANY_SPEC = {
   texts: { internal_rules: { t: "text", max: 5e3, multi: true }, customer_terms: { t: "text", max: 5e3, multi: true } },
   modules: { hidden: { t: "text", max: 400 } },
   watch: { validate_hours: { t: "int", min: 0, max: 720 }, active_no_end_hours: { t: "int", min: 0, max: 720 }, late_count: { t: "int", min: 0, max: 100 }, late_window_days: { t: "int", min: 0, max: 365 }, absent_streak_days: { t: "int", min: 0, max: 60 }, refusal_rate_pct: { t: "int", min: 0, max: 100 }, refusal_min_missions: { t: "int", min: 0, max: 1000 }, min_periods: { t: "int", min: 0, max: 60 }, ignore_days: { t: "int", min: 0, max: 365 }, min_duration_minutes: { t: "int", min: 0, max: 600 }, advance_pending_days: { t: "int", min: 0, max: 90 }, inactive_days: { t: "int", min: 0, max: 365 }, strategic_silent_days: { t: "int", min: 0, max: 365 }, dormant_days: { t: "int", min: 0, max: 730 }, others_pct: { t: "int", min: 0, max: 100 }, backup_max_hours: { t: "int", min: 0, max: 720 }, error_hours: { t: "int", min: 0, max: 720 } },
-  work: { business_model: { t: "enum", vals: ["", "shop", "workshop", "security", "cleaning", "restaurant", "delivery", "building", "office", "other"] }, pay_default: { t: "enum", vals: ["mission", "day", "hour", "piece", "fixed"] }, rate_day_ar: { t: "num", min: 0, max: 1e8 }, rate_hour_ar: { t: "num", min: 0, max: 1e8 }, rate_piece_ar: { t: "num", min: 0, max: 1e8 }, rate_fixed_ar: { t: "num", min: 0, max: 1e8 }, stock_gap_pct: { t: "int", min: 0, max: 100 }, stats_lines: { t: "enum", vals: ["money", "all", "none"] }, late_rule: { t: "enum", vals: ["never", "per_minute", "per_15"] }, absence_paid_sick: { t: "bool" }, absence_paid_leave: { t: "bool" }, absence_paid_none: { t: "bool" }, absence_paid_other: { t: "bool" }, sheet_reminder: { t: "enum", vals: ["on", "off"] }, sheet_reminder_hour: { t: "enum", vals: ["12", "13", "14", "15", "16", "17", "18", "19", "20", "21"] } },
+  work: { business_model: { t: "enum", vals: ["", "shop", "workshop", "security", "cleaning", "restaurant", "delivery", "building", "office", "other"] }, pay_default: { t: "enum", vals: ["mission", "day", "hour", "piece", "commission", "fixed"] }, rate_day_ar: { t: "num", min: 0, max: 1e8 }, rate_hour_ar: { t: "num", min: 0, max: 1e8 }, rate_piece_ar: { t: "num", min: 0, max: 1e8 }, rate_commission_ar: { t: "num", min: 0, max: 100 }, rate_fixed_ar: { t: "num", min: 0, max: 1e8 }, stock_gap_pct: { t: "int", min: 0, max: 100 }, stats_lines: { t: "enum", vals: ["money", "all", "none"] }, late_rule: { t: "enum", vals: ["never", "per_minute", "per_15"] }, absence_paid_sick: { t: "bool" }, absence_paid_leave: { t: "bool" }, absence_paid_none: { t: "bool" }, absence_paid_other: { t: "bool" }, sheet_reminder: { t: "enum", vals: ["on", "off"] }, sheet_reminder_hour: { t: "enum", vals: ["12", "13", "14", "15", "16", "17", "18", "19", "20", "21"] } },
 };
 const COMPANY_DEFAULTS = {
   identity: { name: "", address: "", phone: "", email: "", logo_url: "", currency: "Ar" },
@@ -2457,7 +2460,7 @@ const COMPANY_DEFAULTS = {
   texts: { internal_rules: "", customer_terms: "" },
   modules: { hidden: "" },
   watch: { validate_hours: 0, active_no_end_hours: 0, late_count: 0, late_window_days: 0, absent_streak_days: 0, refusal_rate_pct: 0, refusal_min_missions: 0, min_periods: 0, ignore_days: 0, min_duration_minutes: 0, advance_pending_days: 0, inactive_days: 0, strategic_silent_days: 0, dormant_days: 0, others_pct: 0, backup_max_hours: 0, error_hours: 0 },
-  work: { business_model: "", pay_default: "mission", rate_day_ar: 0, rate_hour_ar: 0, rate_piece_ar: 0, rate_fixed_ar: 0, stock_gap_pct: 10, stats_lines: "money", late_rule: "never", absence_paid_sick: false, absence_paid_leave: true, absence_paid_none: false, absence_paid_other: false, sheet_reminder: "on", sheet_reminder_hour: "18" },
+  work: { business_model: "", pay_default: "mission", rate_day_ar: 0, rate_hour_ar: 0, rate_piece_ar: 0, rate_commission_ar: 0, rate_fixed_ar: 0, stock_gap_pct: 10, stats_lines: "money", late_rule: "never", absence_paid_sick: false, absence_paid_leave: true, absence_paid_none: false, absence_paid_other: false, sheet_reminder: "on", sheet_reminder_hour: "18" },
 };
 const COMPANY_EMPLOYEE_SECTIONS = ["leave"];
 const noTags = (s) => s.replace(/<[^>]*>/g, "").replace(/[<>]/g, "");
@@ -2546,7 +2549,7 @@ const COMPANY_LOG_MAX = 100;
 const stripCompany = (rec, me) => {
   if (!rec || me.role === "admin") return rec;
   // Le comptable garde les conditions et le journal, mais pas les tarifs de paie du travail (jour, heure, pièce, salaire fixe).
-  if (me.role === "accountant") return rec.company && rec.company.work ? { ...rec, company: { ...rec.company, work: { ...rec.company.work, rate_day_ar: 0, rate_hour_ar: 0, rate_piece_ar: 0, rate_fixed_ar: 0 } } } : rec;
+  if (me.role === "accountant") return rec.company && rec.company.work ? { ...rec, company: { ...rec.company, work: { ...rec.company.work, rate_day_ar: 0, rate_hour_ar: 0, rate_piece_ar: 0, rate_commission_ar: 0, rate_fixed_ar: 0 } } } : rec;
   const out = { ...rec };
   delete out.company_log;
   if (out.company) out.company = companyForEmployee(out.company);
