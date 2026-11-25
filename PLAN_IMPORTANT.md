@@ -71,3 +71,4 @@ Puis lire dans l'ordre : `LIRE_EN_PREMIER.md` → `GUIDE_SITE.md` → ce fichier
 - Le **déploiement du serveur** passe par la CLI Supabase (`supabase@3.2.0`, mode API) : non essayée sur un vrai projet.
 
 - **Plan seulement (25 nov.), pas de code repris :** `Nprojet` a un nouveau réglage de compte « Menu du téléphone » (barre du bas ou seulement le haut, synchronisé par compte, réglage `nav_mode`, serveur v91 sur la base de Nprojet). Rien n'est codé dans `gestion` ; à faire seulement si BTK le demande.
+- **Plan seulement (25 nov.), pas de code repris :** `Nprojet` a un retour visible après chaque bouton d'action (outil `fb()` dans `src/utils/actionFeedback.ts` : « Enregistré ✓ », « Copié ✓ », « Supprimé ✓ »… ; « Gardé » hors ligne ; rien d'affiché si le bouton a refusé). À reprendre ici seulement si BTK le demande.
