@@ -67,7 +67,7 @@ Le site est basé sur des **tâches**. Un employé payé **à l'heure** voit enc
   - **Pour l'utiliser** : créer un type de travail avec la mesure « le montant vendu » et la paie « commission » (Réglages > Conditions), puis régler le pourcentage. Les modèles d'entreprise prêts à l'emploi n'en contiennent pas encore.
   - [ ] À tester sur le site en ligne (après Vercel) : créer le type, saisir une vente, valider, voir le montant dans la paie.
   - [x] (25/11) **Serveur déployé** : `df-api` version 3 sur le projet `blvuwirzmtmlehafnvew`, petit `index.ts` qui importe le code du commit `a4cbdaa0adb57a090437dfa692db60d2f3d22460` ; `signup-info` répond en JSON et la connexion admin donne 200. `df-restore` et `df-assistant` restent au commit `008606d` (inchangés). **À chaque nouveau changement du serveur, redéployer `df-api` au nouveau commit.**
-- [ ] **E8. Stock à la validation : RÉGLABLE par chaque entreprise** (décision de BTK, 25/11 : « je ne sais pas quel produit ni quel type de travail, ce n'est pas pour une seule entreprise : il faut plusieurs options »).
+- [x] **E8. Stock à la validation : RÉGLABLE par chaque entreprise** (étapes 1 à 3 faites le 25/11, reste les essais en ligne et la modification d'un type existant) (décision de BTK, 25/11 : « je ne sais pas quel produit ni quel type de travail, ce n'est pas pour une seule entreprise : il faut plusieurs options »).
   - **Règle de conception :** le site n'impose rien. **Par défaut, aucun lien avec le stock.** Chaque entreprise choisit, **type de travail par type de travail**, parmi les options ci-dessous.
   - **Les options d'un type de travail** (champ facultatif `stock` du type) :
     1. **Aucun lien** (par défaut).
@@ -87,8 +87,10 @@ Le site est basé sur des **tâches**. Un employé payé **à l'heure** voit enc
     - Le mouvement garde `work_post_id` (site : `StockMove`, `checkMoveDraft` ; serveur : `cleanStockMove`, entrée ou sortie seulement, 80 caractères au plus). Contrôles ajoutés dans `check-stock.tsx`.
     - **Limite connue :** si le validateur n'est pas admin (chef d'équipe), aucun mouvement n'est créé (il ne peut pas écrire le stock) ; une ligne du chef validée plus tard par l'admin en crée un.
     - **Limite connue :** l'unicité d'un mouvement par ligne est garantie côté site (`work_post_id`), pas encore par le serveur.
-  - [ ] Avertissement à l'écran : le site émet l'événement `df-stock-notice` (`{ post_id, reason }`, raisons : `product`, `stock`…) mais **aucun écran ne l'affiche encore** (étape 3).
-  - [ ] Étape 3 : formulaire de réglage (option, produit, coefficient) dans les conditions de l'entreprise.
+  - [x] Avertissement à l'écran (25/11) : si le mouvement ne peut pas se faire (produit supprimé, stock insuffisant), la notification du site dit « Ligne validée, mais le stock n'a pas bougé : … » (`ToastHost`, événement `df:toast`). Elle est en français seulement.
+  - [x] Étape 3 (25/11) : **formulaire de réglage** dans Réglages > Conditions > « Mes types de travail » (`CustomWorkTypes.tsx`) : quand le type est mesuré par une quantité, un bloc « Lien avec le stock (facultatif) » : Aucun lien (par défaut) / La production fait monter le stock / Le travail consomme un produit / Seulement un signal ; produit choisi dans le stock de l'entreprise ; quantité par unité faite. Les « Règles que le site applique » de chaque type disent le lien (`workRuleLines`, français et anglais). Même passage : « le montant vendu » et le tarif de commission en **pourcentage** s'y lisent correctement.
+  - [ ] **À tester sur le site en ligne (après Vercel)** : créer un produit, créer un type « quantité » lié à ce produit, saisir et valider une ligne, voir le mouvement dans le Stock ; annuler la ligne et voir le mouvement partir.
+  - [ ] Limite : le lien se règle à la **création** d'un type. Pour changer le lien d'un type existant, il faut le supprimer et le recréer (les saisies déjà faites restent). Un écran de modification reste à faire.
   - [ ] Retour fournisseur (M23.6) : reste une décision séparée, hors de E8.
 - [ ] **E9. Fiche de suivi par employé** pour le responsable et le chef d'équipe : présences, retards, absences, heures ou quantités, validations en attente. Le chef d'équipe ne voit que son équipe. Les salaires restent cachés aux rôles non autorisés.
 

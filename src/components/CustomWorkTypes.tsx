@@ -23,14 +23,21 @@ export const CustomWorkTypes: React.FC<{ lang: 'fr' | 'en' }> = ({ lang }) => {
   const [entry, setEntry] = useState<EntryBy[]>(['admin', 'team_lead']);
   const [ufr, setUfr] = useState('boîte'); const [uen, setUen] = useState('box');
   const [err, setErr] = useState('');
+  const [stockMode, setStockMode] = useState<'none' | 'in' | 'out' | 'gap'>('none'); // lien facultatif avec le stock : par défaut AUCUN
+  const [stockProduct, setStockProduct] = useState(''); const [stockPer, setStockPer] = useState('1');
+  const products = db.getProducts();
+  const productName = (id: string) => products.find(p => p.id === id)?.name || t('(produit supprimé)', '(deleted product)');
   const pays = PAY_MODES.filter(p => compatible(measure, p));
   const needsUnit = measure === 'quantity' || pay === 'piece';
-  const changeMeasure = (m: Measure) => { setMeasure(m); if (!compatible(m, pay)) setPay(PAY_MODES.find(p => compatible(m, p)) || 'fixed'); };
+  const changeMeasure = (m: Measure) => { setMeasure(m); if (m !== 'quantity') setStockMode('none'); if (!compatible(m, pay)) setPay(PAY_MODES.find(p => compatible(m, p)) || 'fixed'); };
   const toggle = (e: EntryBy) => setEntry(p => (p.includes(e) ? p.filter(x => x !== e) : [...p, e]));
   const save = () => {
-    const r = db.saveCustomWorkType({ name: { fr, en }, measure, pay, entry, ...(needsUnit ? { unit: { fr: ufr, en: uen } } : {}) });
+    const wantsStock = measure === 'quantity' && stockMode !== 'none';
+    if (wantsStock && stockMode !== 'gap' && !stockProduct) { setErr(t('Choisis le produit du stock, ou mets « Aucun lien ».', 'Choose the stock product, or set "No link".')); return; }
+    const stock = !wantsStock ? undefined : stockMode === 'gap' ? { mode: 'gap' } : { mode: stockMode, product_id: stockProduct, per_unit: Number(String(stockPer).replace(',', '.')) };
+    const r = db.saveCustomWorkType({ name: { fr, en }, measure, pay, entry, ...(needsUnit ? { unit: { fr: ufr, en: uen } } : {}), ...(stock ? { stock } : {}) });
     if (!r.success) { setErr(r.error || t('Refusé.', 'Refused.')); return; }
-    setErr(''); setFr(''); setEn(''); setOpen(false); force(n => n + 1);
+    setErr(''); setFr(''); setEn(''); setStockMode('none'); setStockProduct(''); setStockPer('1'); setOpen(false); force(n => n + 1);
   };
   const del = (id: string, name: string) => { if (!window.confirm(t(`Supprimer le type « ${name} » ? Les saisies déjà faites restent.`, `Delete the type "${name}"? Entries already made stay.`))) return; db.removeCustomWorkType(id); force(n => n + 1); };
 
@@ -45,7 +52,7 @@ export const CustomWorkTypes: React.FC<{ lang: 'fr' | 'en' }> = ({ lang }) => {
           {active.map(x => (
             <div key={x.id} data-work-rule-type={x.id} className="space-y-1">
               <div className="text-sm font-bold text-white">{t(x.name.fr, x.name.en)}</div>
-              <ul className="list-disc pl-5 space-y-0.5 text-[11px] text-slate-300">{workRuleLines(x, work).map(l => <li key={l.key}>{t(l.fr, l.en)}</li>)}</ul>
+              <ul className="list-disc pl-5 space-y-0.5 text-[11px] text-slate-300">{workRuleLines(x, work, productName).map(l => <li key={l.key}>{t(l.fr, l.en)}</li>)}</ul>
             </div>
           ))}
         </div>
@@ -76,6 +83,25 @@ export const CustomWorkTypes: React.FC<{ lang: 'fr' | 'en' }> = ({ lang }) => {
               <label className="block space-y-1"><span className="text-xs text-slate-300">{t('Unité (français)', 'Unit (French)')}</span><input value={ufr} maxLength={20} onChange={e => setUfr(e.target.value)} className={input} /></label>
               <label className="block space-y-1"><span className="text-xs text-slate-300">{t('Unité (anglais)', 'Unit (English)')}</span><input value={uen} maxLength={20} onChange={e => setUen(e.target.value)} className={input} /></label>
             </div>
+          )}
+          {measure === 'quantity' && (
+            <fieldset data-cwt-stock className="space-y-2 rounded-lg border border-slate-700 p-3"><legend className="px-1 text-xs text-slate-300">{t('Lien avec le stock (facultatif)', 'Link with the stock (optional)')}</legend>
+              <p className="text-[11px] text-slate-400">{t('Quand une ligne de ce travail est validée, le stock peut bouger tout seul. Par défaut : aucun lien.', 'When a line of this work is validated, the stock can move by itself. Default: no link.')}</p>
+              <select data-cwt-stock-mode value={stockMode} onChange={e => setStockMode(e.target.value as 'none' | 'in' | 'out' | 'gap')} className={input}>
+                <option value="none">{t('Aucun lien', 'No link')}</option>
+                <option value="in">{t('La production fait monter le stock', 'Production adds to the stock')}</option>
+                <option value="out">{t('Le travail consomme un produit (le stock baisse)', 'The work uses up a product (stock goes down)')}</option>
+                <option value="gap">{t('Seulement un signal si l\'écart est trop grand', 'Only a warning if the gap is too big')}</option>
+              </select>
+              {(stockMode === 'in' || stockMode === 'out') && (products.length === 0
+                ? <p className="text-[11px] text-amber-300">{t('Aucun produit dans le stock : crée-le d\'abord dans Stock.', 'No product in the stock: create it in Stock first.')}</p>
+                : <div className="grid grid-cols-2 gap-2">
+                    <label className="block space-y-1"><span className="text-xs text-slate-300">{t('Produit', 'Product')}</span>
+                      <select data-cwt-stock-product value={stockProduct} onChange={e => setStockProduct(e.target.value)} className={input}><option value="">{t('— choisir —', '— choose —')}</option>{products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
+                    <label className="block space-y-1"><span className="text-xs text-slate-300">{t('Quantité par unité faite', 'Quantity per unit done')}</span>
+                      <input data-cwt-stock-per inputMode="decimal" value={stockPer} onChange={e => setStockPer(e.target.value)} className={input} /></label>
+                  </div>)}
+            </fieldset>
           )}
           <fieldset className="space-y-1"><legend className="text-xs text-slate-300">{t('Qui le saisit', 'Who enters it')}</legend>
             {ENTRY_BY.map(e => <label key={e} className="flex items-center gap-3 min-h-[44px] text-sm text-slate-200 cursor-pointer"><input type="checkbox" checked={entry.includes(e)} onChange={() => toggle(e)} className="w-5 h-5 accent-emerald-500" />{t(ENTRY_LABEL[e].fr, ENTRY_LABEL[e].en)}</label>)}

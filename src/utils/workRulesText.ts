@@ -3,11 +3,11 @@
 // Pure : pas d'écran, pas de serveur. Contrôlé par `npm run check:work-rules-text`.
 import { ABSENCE_REASONS, ABSENCE_LABEL, ENTRY_LABEL, LATE_RULE_LABEL, MEASURE_LABEL, PAY_LABEL, isPayMode, type LateRule, type WorkType } from './workTypes';
 
-export interface RuleLine { key: 'enter' | 'ask' | 'calendar' | 'pay' | 'late' | 'absence'; fr: string; en: string }
+export interface RuleLine { key: 'enter' | 'ask' | 'calendar' | 'pay' | 'stock' | 'late' | 'absence'; fr: string; en: string }
 const money = (n: unknown): string => `${Math.round(Number(n) || 0).toLocaleString('fr-FR')} Ar`;
 
 /** Les lignes de règles d'un type, dans l'ordre où la personne les rencontre : saisie, champs demandés, calendrier, paie, retard, absence. `work` = réglages `company.work` (peut être vide). */
-export function workRuleLines(t: WorkType, work: any = {}): RuleLine[] {
+export function workRuleLines(t: WorkType, work: any = {}, productName: (id: string) => string = id => id): RuleLine[] {
   const w = work && typeof work === 'object' ? work : {};
   const out: RuleLine[] = [];
   const who = t.entry.map(e => ENTRY_LABEL[e]);
@@ -18,6 +18,7 @@ export function workRuleLines(t: WorkType, work: any = {}): RuleLine[] {
     quantity: [`quantité faite (${unit}) et quantité refusée`, `quantity done (${unitEn}) and quantity rejected`],
     proof: ['une preuve (capture ou photo), comme une mission', 'a proof (screenshot or photo), like a mission'],
     tasks: ['les tâches faites dans la journée', 'the tasks done during the day'],
+    sales: ['le montant vendu (en Ar)', 'the amount sold (in Ar)'],
     none: ['rien de plus (le travail est compté tel quel)', 'nothing more (the work is counted as is)'],
   };
   const a = ask[t.measure] || ask.none;
@@ -27,10 +28,18 @@ export function workRuleLines(t: WorkType, work: any = {}): RuleLine[] {
     : { key: 'calendar', fr: 'Calendrier : apparaît dans « Travail saisi » du jour, jamais comme une mission ; une saisie encore sur le téléphone est marquée « pas encore envoyée ».', en: 'Calendar: shown in "Work entered" of the day, never as a mission; an entry still on the phone is marked "not sent yet".' });
   const rateKey = t.pay === 'day' ? 'rate_day_ar' : t.pay === 'hour' ? 'rate_hour_ar' : t.pay === 'piece' ? 'rate_piece_ar' : t.pay === 'commission' ? 'rate_commission_ar' : t.pay === 'fixed' ? 'rate_fixed_ar' : '';
   const rate = rateKey ? Number(w[rateKey]) || 0 : 0;
+  const rateText = t.pay === 'commission' ? `${rate} %` : money(rate); // la commission est un pourcentage des ventes, pas des Ar
   const payMode = isPayMode(t.pay) ? t.pay : 'mission';
   out.push(rateKey
-    ? { key: 'pay', fr: `Paie : ${PAY_LABEL[payMode].fr}${rate > 0 ? `, tarif de l'entreprise ${money(rate)} (le tarif propre d'un employé passe avant)` : ' : AUCUN TARIF réglé dans les Conditions, la paie sera à 0 tant qu\'il manque'}.`, en: `Pay: ${PAY_LABEL[payMode].en}${rate > 0 ? `, company rate ${money(rate)} (an employee's own rate comes first)` : ': NO RATE set in Conditions, pay will be 0 until it is'}.` }
+    ? { key: 'pay', fr: `Paie : ${PAY_LABEL[payMode].fr}${rate > 0 ? `, tarif de l'entreprise ${rateText} (le tarif propre d'un employé passe avant)` : ' : AUCUN TARIF réglé dans les Conditions, la paie sera à 0 tant qu\'il manque'}.`, en: `Pay: ${PAY_LABEL[payMode].en}${rate > 0 ? `, company rate ${rateText} (an employee's own rate comes first)` : ': NO RATE set in Conditions, pay will be 0 until it is'}.` }
     : { key: 'pay', fr: `Paie : ${PAY_LABEL[payMode].fr} (le prix d'une mission des Réglages).`, en: `Pay: ${PAY_LABEL[payMode].en} (the mission price from Settings).` });
+  if (t.stock && t.stock.mode === 'gap') out.push({ key: 'stock', fr: 'Stock : aucun mouvement, seulement un signal si l\'écart dépasse le seuil des Conditions.', en: 'Stock: no movement, only a warning if the gap goes over the threshold in Conditions.' });
+  else if (t.stock) {
+    const nm = productName(t.stock.product_id), up = t.stock.per_unit;
+    out.push(t.stock.mode === 'in'
+      ? { key: 'stock', fr: `Stock : la production validée fait monter le stock de « ${nm} » (${up} par ${unit} faite, les refusées sont retirées).`, en: `Stock: validated production adds to the stock of "${nm}" (${up} per ${unitEn} done, rejected ones are removed).` }
+      : { key: 'stock', fr: `Stock : le travail validé consomme « ${nm} » (${up} par ${unit} faite) ; le stock baisse.`, en: `Stock: validated work uses up "${nm}" (${up} per ${unitEn} done); the stock goes down.` });
+  } else out.push({ key: 'stock', fr: 'Stock : aucun lien (par défaut).', en: 'Stock: no link (default).' });
   if (t.measure === 'presence') {
     const lr = (['never', 'per_minute', 'per_15'] as string[]).includes(w.late_rule) ? (w.late_rule as LateRule) : 'never';
     out.push({ key: 'late', fr: `Retard retiré de la paie : ${LATE_RULE_LABEL[lr].fr.toLowerCase()}.`, en: `Lateness taken off pay: ${LATE_RULE_LABEL[lr].en.toLowerCase()}.` });

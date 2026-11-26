@@ -139,7 +139,7 @@ export const stockMethods = defineMethods({
   /**
    * E8 : à la validation d'une ligne de travail, applique le lien FACULTATIF de son type avec le stock (règles : utils/workStock.ts).
    * Réservé à l'admin (le stock lui appartient). JAMAIS bloquant : la ligne est déjà validée ; on dit seulement pourquoi rien n'a été fait.
-   * JAMAIS en double : le mouvement garde l'identifiant de la ligne. Un avertissement (produit supprimé, stock insuffisant) part en événement `df-stock-notice`.
+   * JAMAIS en double : le mouvement garde l'identifiant de la ligne. Un avertissement (produit supprimé, stock insuffisant) s'affiche en notification.
    */
   applyWorkStock(postId: string): { done: boolean; skip?: string; error?: string } {
     try {
@@ -174,9 +174,10 @@ export const stockMethods = defineMethods({
     } catch { return false; }
   },
 
-  /** Avertissement non bloquant, affiché par l'écran qui l'écoute (événement `df-stock-notice`). */
-  workStockNotice(postId: string, reason: string): void {
-    if (typeof window !== 'undefined' && typeof CustomEvent !== 'undefined') window.dispatchEvent(new CustomEvent('df-stock-notice', { detail: { post_id: postId, reason } }));
+  /** Avertissement non bloquant : la ligne reste validée, le stock n'a pas bougé. Affiché par ToastHost (événement `df:toast`). */
+  workStockNotice(_postId: string, reason: string): void {
+    const why = reason === 'product' ? 'le produit lié à ce type de travail n\'existe plus' : reason === 'stock' ? 'il n\'y en a pas assez en stock' : 'le mouvement n\'a pas pu être fait';
+    if (typeof window !== 'undefined' && typeof CustomEvent !== 'undefined') window.dispatchEvent(new CustomEvent('df:toast', { detail: { message: `Ligne validée, mais le stock n'a pas bougé : ${why}.`, type: 'error' } }));
   },
 
   /** Supprime un mouvement (la quantité se recalcule). Refusé si cela rendrait le stock négatif. La dépense liée, s'il y en a une, reste : elle se supprime dans Finances. */
