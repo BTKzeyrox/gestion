@@ -140,5 +140,23 @@ ok(tl.teamPendingPosts(lead2 as any, users as any, l.saved).length === 1, 'un AU
 const ds = readStoreSource();
 ok(/weSelfEntered\(me, this\.posts\.find\(p => p\.id === id\)\)/.test(ds), 'décider sur sa propre saisie est refusé avant tout envoi');
 void db;
+// L'employé qui envoie lui-même sa journée (E5) : éteint par défaut ; seulement pour LUI ; aujourd'hui ou hier ; toujours en attente d'une validation
+const onSet = { ...settings, company: { work: { ...settings.company.work, employee_entry: true } } };
+const runOn = (f: any, me: any, sheet: any, ex: any[] = [], today = TODAY) => f(me, JSON.parse(JSON.stringify(users)), ex, sheet, onSet, NOW, today);
+const mine = (o: any = {}, date = TODAY) => ({ date, lines: [L(o)] });
+const both2 = (fn: (f: any) => any) => [fn(site.planWorkEntries), fn(S.planWorkEntries)];
+ok(both2(f => run(f, emp, mine())).every((r: any) => !r.ok && r.error === 'role'), 'employé : par défaut il ne peut PAS envoyer sa journée (réglage éteint)');
+ok(both2(f => runOn(f, emp, mine())).every((r: any) => r.ok && r.saved.length === 1 && r.failed.length === 0 && r.saved[0].status === 'pending_end' && r.saved[0].entered_by === 'e1' && r.saved[0].employee_id === 'e1' && r.validated === false && r.users.length === 0 && !r.saved[0].start_validated_at), 'employé : réglage allumé : sa ligne est enregistrée EN ATTENTE, rien n\'est payé ni validé');
+ok(both2(f => runOn(f, emp, { date: TODAY, lines: [L({ employee_id: 'e2' })] })).every((r: any) => r.ok && r.saved.length === 0 && r.failed[0].error === 'employee'), 'employé : jamais pour un autre employé');
+ok(both2(f => runOn(f, emp, { date: TODAY, lines: [L({ employee_id: 'l1' })] })).every((r: any) => r.ok && r.saved.length === 0 && r.failed[0].error === 'employee'), 'employé : jamais pour le chef ni le responsable');
+ok(both2(f => runOn(f, emp, mine({}, '2026-11-04'))).every((r: any) => r.ok && r.saved.length === 1), 'employé : hier est permis');
+ok(both2(f => runOn(f, emp, mine({}, '2026-11-03'))).every((r: any) => !r.ok && r.error === 'date') && both2(f => runOn(f, emp, mine({}, '2026-11-06'))).every((r: any) => !r.ok && r.error === 'date'), 'employé : pas avant-hier, pas demain');
+ok(both2(f => run(f, lead, mine({ employee_id: 'e1' }, '2026-10-20'), [], users, '2026-10-30')).every((r: any) => r.ok && r.saved.length === 1), 'le chef garde ses 31 jours (la limite d\'hier ne vaut que pour l\'employé)');
+const many = (n: number) => ({ date: TODAY, lines: Array.from({ length: n }, (_, i) => L({ work_type: 't' + i })) });
+ok(both2(f => runOn(f, emp, many(20))).every((r: any) => r.ok && r.saved.length === 20) && both2(f => runOn(f, emp, many(21))).every((r: any) => !r.ok && r.error === 'too_many'), 'employé : 20 lignes au plus par envoi');
+ok(both2(f => runOn(f, emp, mine({ presence: 'absent', quantity: undefined, rejected: undefined }))).every((r: any) => r.ok && r.saved[0].status === 'pending_end' && r.saved[0].presence === 'absent'), 'employé : une absence déclarée reste aussi en attente');
+ok(both2(f => runOn(f, acc, mine())).every((r: any) => !r.ok && r.error === 'role'), 'le comptable n\'a toujours aucun droit de saisie');
+const empLine = (runOn(S.planWorkEntries, emp, mine()) as any).saved[0];
+ok(S.weSelfEntered(emp, empLine) === true && S.weSelfEntered(lead, empLine) === false && S.weSelfEntered(admin, empLine) === false, 'personne ne valide sa propre saisie : l\'employé non, le chef et le responsable oui');
 console.log(fails ? `\n${fails} échec(s)` : '\nTout est bon.');
 process.exit(fails ? 1 : 0);

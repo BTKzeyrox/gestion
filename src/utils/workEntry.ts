@@ -6,6 +6,8 @@ const wePay = postPayAr;
 // ===== BEGIN WORKENTRY =====
 export const WE_MAX_LINES = 100;
 export const WE_DAYS_BACK = 31;
+export const WE_EMP_MAX_LINES = 20; // l'employé qui envoie lui-même sa journée : 20 lignes au plus
+export const WE_EMP_DAYS_BACK = 1; // ... et seulement aujourd'hui ou hier
 const WE_PRESENCE = ["present", "late", "half", "absent"];
 const WE_ABSENCE = ["sick", "leave", "none", "other"];
 const weIsoDate = (s: unknown): boolean => { if (typeof s !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(s)) return false; const d = new Date(s + "T00:00:00Z"); return !isNaN(d.getTime()) && d.toISOString().slice(0, 10) === s; };
@@ -22,8 +24,8 @@ const weNum = (v: unknown, max: number): number | null | undefined => {
   if (!isFinite(n) || n < 0 || n > max) return null;
   return Math.round(n * 100) / 100;
 };
-/** Qui peut saisir pour qui : le responsable pour tout opérateur ; le Chef d'équipe pour les opérateurs de SON équipe (jamais lui-même) ; personne d'autre. */
-export const weCanEnterFor = (me: any, emp: any): boolean => !!me && !!emp && isOperator(emp.role) && emp.id !== me.id && (me.role === "admin" || (me.role === "team_lead" && sameTeam(me, emp)));
+/** Qui peut saisir pour qui : le responsable pour tout opérateur ; le Chef d'équipe pour les opérateurs de SON équipe (jamais lui-même) ; l'employé pour LUI SEUL (et seulement si l'entreprise l'a permis : voir `planWorkEntries`) ; personne d'autre. */
+export const weCanEnterFor = (me: any, emp: any): boolean => !!me && !!emp && (isOperator(me.role) ? emp.id === me.id : isOperator(emp.role) && emp.id !== me.id && (me.role === "admin" || (me.role === "team_lead" && sameTeam(me, emp))));
 const weSafe = (s: string): string => s.replace(/[^A-Za-z0-9_-]/g, "_");
 /**
  * Une feuille du jour : { date, type_label?, lines: [{ employee_id, work_type, presence?, hours?, quantity?, rejected?, sales_ar?, late_minutes?, absence_reason? }] }.
@@ -32,12 +34,15 @@ const weSafe = (s: string): string => s.replace(/[^A-Za-z0-9_-]/g, "_");
  * Saisie du responsable : validée tout de suite (montant calculé maintenant). Saisie du Chef d'équipe : en attente du responsable (personne ne valide sa propre saisie : voir `weSelfEntered`).
  */
 export function planWorkEntries(me: any, users: any[], existing: any[], sheet: any, settings: any, nowIso: string, today: string): any {
-  if (!me || (me.role !== "admin" && me.role !== "team_lead")) return { ok: false, error: "role" };
+  // L'employé qui envoie sa propre journée : seulement si l'entreprise l'a permis (réglage « employee_entry », NON par défaut) ; sa ligne attend toujours une validation.
+  const selfEntry = !!me && isOperator(me.role);
+  if (!me || (me.role !== "admin" && me.role !== "team_lead" && !(selfEntry && settings && settings.company && settings.company.work && settings.company.work.employee_entry === true))) return { ok: false, error: "role" };
   if (!sheet || typeof sheet !== "object") return { ok: false, error: "bad" };
   if (!weDateOk(sheet.date, today)) return { ok: false, error: "date" };
+  if (selfEntry && weDayNo(today) - weDayNo(sheet.date) > WE_EMP_DAYS_BACK) return { ok: false, error: "date" };
   const lines = sheet.lines;
   if (!Array.isArray(lines) || lines.length === 0) return { ok: false, error: "empty" };
-  if (lines.length > WE_MAX_LINES) return { ok: false, error: "too_many" };
+  if (lines.length > (selfEntry ? WE_EMP_MAX_LINES : WE_MAX_LINES)) return { ok: false, error: "too_many" };
   const label = String(sheet.type_label ?? "").replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim().slice(0, 60);
   const byId = new Map<string, any>();
   for (const u of users || []) if (u && typeof u.id === "string") byId.set(u.id, { ...u });

@@ -205,6 +205,8 @@ const dayInClosedPeriod = (periods: any[], date: string): boolean => (periods ||
 const wePay = decPostPay;
 const WE_MAX_LINES = 100;
 const WE_DAYS_BACK = 31;
+const WE_EMP_MAX_LINES = 20; // l'employé qui envoie lui-même sa journée : 20 lignes au plus
+const WE_EMP_DAYS_BACK = 1; // ... et seulement aujourd'hui ou hier
 const WE_PRESENCE = ["present", "late", "half", "absent"];
 const WE_ABSENCE = ["sick", "leave", "none", "other"];
 const weIsoDate = (s: unknown): boolean => { if (typeof s !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(s)) return false; const d = new Date(s + "T00:00:00Z"); return !isNaN(d.getTime()) && d.toISOString().slice(0, 10) === s; };
@@ -221,8 +223,8 @@ const weNum = (v: unknown, max: number): number | null | undefined => {
   if (!isFinite(n) || n < 0 || n > max) return null;
   return Math.round(n * 100) / 100;
 };
-/** Qui peut saisir pour qui : le responsable pour tout opérateur ; le Chef d'équipe pour les opérateurs de SON équipe (jamais lui-même) ; personne d'autre. */
-const weCanEnterFor = (me: any, emp: any): boolean => !!me && !!emp && isOperator(emp.role) && emp.id !== me.id && (me.role === "admin" || (me.role === "team_lead" && sameTeam(me, emp)));
+/** Qui peut saisir pour qui : le responsable pour tout opérateur ; le Chef d'équipe pour les opérateurs de SON équipe (jamais lui-même) ; l'employé pour LUI SEUL (et seulement si l'entreprise l'a permis : voir `planWorkEntries`) ; personne d'autre. */
+const weCanEnterFor = (me: any, emp: any): boolean => !!me && !!emp && (isOperator(me.role) ? emp.id === me.id : isOperator(emp.role) && emp.id !== me.id && (me.role === "admin" || (me.role === "team_lead" && sameTeam(me, emp))));
 const weSafe = (s: string): string => s.replace(/[^A-Za-z0-9_-]/g, "_");
 /**
  * Une feuille du jour : { date, type_label?, lines: [{ employee_id, work_type, presence?, hours?, quantity?, rejected?, sales_ar?, late_minutes?, absence_reason? }] }.
@@ -231,12 +233,15 @@ const weSafe = (s: string): string => s.replace(/[^A-Za-z0-9_-]/g, "_");
  * Saisie du responsable : validée tout de suite (montant calculé maintenant). Saisie du Chef d'équipe : en attente du responsable (personne ne valide sa propre saisie : voir `weSelfEntered`).
  */
 function planWorkEntries(me: any, users: any[], existing: any[], sheet: any, settings: any, nowIso: string, today: string): any {
-  if (!me || (me.role !== "admin" && me.role !== "team_lead")) return { ok: false, error: "role" };
+  // L'employé qui envoie sa propre journée : seulement si l'entreprise l'a permis (réglage « employee_entry », NON par défaut) ; sa ligne attend toujours une validation.
+  const selfEntry = !!me && isOperator(me.role);
+  if (!me || (me.role !== "admin" && me.role !== "team_lead" && !(selfEntry && settings && settings.company && settings.company.work && settings.company.work.employee_entry === true))) return { ok: false, error: "role" };
   if (!sheet || typeof sheet !== "object") return { ok: false, error: "bad" };
   if (!weDateOk(sheet.date, today)) return { ok: false, error: "date" };
+  if (selfEntry && weDayNo(today) - weDayNo(sheet.date) > WE_EMP_DAYS_BACK) return { ok: false, error: "date" };
   const lines = sheet.lines;
   if (!Array.isArray(lines) || lines.length === 0) return { ok: false, error: "empty" };
-  if (lines.length > WE_MAX_LINES) return { ok: false, error: "too_many" };
+  if (lines.length > (selfEntry ? WE_EMP_MAX_LINES : WE_MAX_LINES)) return { ok: false, error: "too_many" };
   const label = String(sheet.type_label ?? "").replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim().slice(0, 60);
   const byId = new Map<string, any>();
   for (const u of users || []) if (u && typeof u.id === "string") byId.set(u.id, { ...u });
@@ -2460,7 +2465,7 @@ const COMPANY_SPEC = {
   texts: { internal_rules: { t: "text", max: 5e3, multi: true }, customer_terms: { t: "text", max: 5e3, multi: true } },
   modules: { hidden: { t: "text", max: 400 } },
   watch: { validate_hours: { t: "int", min: 0, max: 720 }, active_no_end_hours: { t: "int", min: 0, max: 720 }, late_count: { t: "int", min: 0, max: 100 }, late_window_days: { t: "int", min: 0, max: 365 }, absent_streak_days: { t: "int", min: 0, max: 60 }, refusal_rate_pct: { t: "int", min: 0, max: 100 }, refusal_min_missions: { t: "int", min: 0, max: 1000 }, min_periods: { t: "int", min: 0, max: 60 }, ignore_days: { t: "int", min: 0, max: 365 }, min_duration_minutes: { t: "int", min: 0, max: 600 }, advance_pending_days: { t: "int", min: 0, max: 90 }, inactive_days: { t: "int", min: 0, max: 365 }, strategic_silent_days: { t: "int", min: 0, max: 365 }, dormant_days: { t: "int", min: 0, max: 730 }, others_pct: { t: "int", min: 0, max: 100 }, backup_max_hours: { t: "int", min: 0, max: 720 }, error_hours: { t: "int", min: 0, max: 720 } },
-  work: { business_model: { t: "enum", vals: ["", "shop", "workshop", "security", "cleaning", "restaurant", "delivery", "building", "office", "other"] }, pay_default: { t: "enum", vals: ["mission", "day", "hour", "piece", "commission", "fixed"] }, rate_day_ar: { t: "num", min: 0, max: 1e8 }, rate_hour_ar: { t: "num", min: 0, max: 1e8 }, rate_piece_ar: { t: "num", min: 0, max: 1e8 }, rate_commission_ar: { t: "num", min: 0, max: 100 }, rate_fixed_ar: { t: "num", min: 0, max: 1e8 }, stock_gap_pct: { t: "int", min: 0, max: 100 }, stats_lines: { t: "enum", vals: ["money", "all", "none"] }, late_rule: { t: "enum", vals: ["never", "per_minute", "per_15"] }, absence_paid_sick: { t: "bool" }, absence_paid_leave: { t: "bool" }, absence_paid_none: { t: "bool" }, absence_paid_other: { t: "bool" }, sheet_reminder: { t: "enum", vals: ["on", "off"] }, sheet_reminder_hour: { t: "enum", vals: ["12", "13", "14", "15", "16", "17", "18", "19", "20", "21"] } },
+  work: { business_model: { t: "enum", vals: ["", "shop", "workshop", "security", "cleaning", "restaurant", "delivery", "building", "office", "other"] }, pay_default: { t: "enum", vals: ["mission", "day", "hour", "piece", "commission", "fixed"] }, rate_day_ar: { t: "num", min: 0, max: 1e8 }, rate_hour_ar: { t: "num", min: 0, max: 1e8 }, rate_piece_ar: { t: "num", min: 0, max: 1e8 }, rate_commission_ar: { t: "num", min: 0, max: 100 }, rate_fixed_ar: { t: "num", min: 0, max: 1e8 }, stock_gap_pct: { t: "int", min: 0, max: 100 }, stats_lines: { t: "enum", vals: ["money", "all", "none"] }, late_rule: { t: "enum", vals: ["never", "per_minute", "per_15"] }, absence_paid_sick: { t: "bool" }, absence_paid_leave: { t: "bool" }, absence_paid_none: { t: "bool" }, absence_paid_other: { t: "bool" }, employee_entry: { t: "bool" }, sheet_reminder: { t: "enum", vals: ["on", "off"] }, sheet_reminder_hour: { t: "enum", vals: ["12", "13", "14", "15", "16", "17", "18", "19", "20", "21"] } },
 };
 const COMPANY_DEFAULTS = {
   identity: { name: "", address: "", phone: "", email: "", logo_url: "", currency: "Ar" },
@@ -2475,7 +2480,7 @@ const COMPANY_DEFAULTS = {
   texts: { internal_rules: "", customer_terms: "" },
   modules: { hidden: "" },
   watch: { validate_hours: 0, active_no_end_hours: 0, late_count: 0, late_window_days: 0, absent_streak_days: 0, refusal_rate_pct: 0, refusal_min_missions: 0, min_periods: 0, ignore_days: 0, min_duration_minutes: 0, advance_pending_days: 0, inactive_days: 0, strategic_silent_days: 0, dormant_days: 0, others_pct: 0, backup_max_hours: 0, error_hours: 0 },
-  work: { business_model: "", pay_default: "mission", rate_day_ar: 0, rate_hour_ar: 0, rate_piece_ar: 0, rate_commission_ar: 0, rate_fixed_ar: 0, stock_gap_pct: 10, stats_lines: "money", late_rule: "never", absence_paid_sick: false, absence_paid_leave: true, absence_paid_none: false, absence_paid_other: false, sheet_reminder: "on", sheet_reminder_hour: "18" },
+  work: { business_model: "", pay_default: "mission", rate_day_ar: 0, rate_hour_ar: 0, rate_piece_ar: 0, rate_commission_ar: 0, rate_fixed_ar: 0, stock_gap_pct: 10, stats_lines: "money", late_rule: "never", absence_paid_sick: false, absence_paid_leave: true, absence_paid_none: false, absence_paid_other: false, employee_entry: false, sheet_reminder: "on", sheet_reminder_hour: "18" },
 };
 const COMPANY_EMPLOYEE_SECTIONS = ["leave"];
 const noTags = (s) => s.replace(/<[^>]*>/g, "").replace(/[<>]/g, "");
@@ -4307,7 +4312,7 @@ async function postDecide(req: any, res: any, me: any) {
 
 // ---------- Feuille du jour (module 26, M26.5a) : le responsable ou le Chef d'équipe saisit présence, heures, quantité et refus ; TOUT se vérifie ici ----------
 async function workEntryRoute(req: any, res: any, me: any) {
-  if (me.role !== 'admin' && me.role !== 'team_lead') return res.status(403).json({ error: "Réservé au responsable et au chef d'équipe." });
+  if (me.role !== 'admin' && me.role !== 'team_lead' && !isOperator(me.role)) return res.status(403).json({ error: "Réservé au responsable et au chef d'équipe." }); // l'employé : seulement si l'entreprise l'a permis (le plan le refuse sinon)
   const b = req.body || {};
   const now = new Date();
   const today = new Date(now.getTime() + 3 * 3600000).toISOString().slice(0, 10); // jour de Madagascar (UTC+3)
@@ -4322,7 +4327,7 @@ async function workEntryRoute(req: any, res: any, me: any) {
   const { data: st } = await sb.from(T.settings).select('data').eq('id', 'general').maybeSingle();
   const plan = planWorkEntries(me, users, existing, b, st?.data || {}, now.toISOString(), today);
   if (!plan.ok) {
-    const msg: Record<string, string> = { role: "Réservé au responsable et au chef d'équipe.", bad: 'Feuille illisible.', date: "Date impossible : aujourd'hui ou les 31 derniers jours.", empty: 'La feuille est vide.', too_many: 'Trop de lignes (100 au plus).' };
+    const msg: Record<string, string> = { role: "Tu ne peux pas envoyer ta journée : l'entreprise ne l'a pas permis.", bad: 'Feuille illisible.', date: "Date impossible : aujourd'hui ou les 31 derniers jours.", empty: 'La feuille est vide.', too_many: 'Trop de lignes (100 au plus).' };
     return res.status(plan.error === 'role' ? 403 : 400).json({ error: msg[plan.error] || 'Feuille refusée.' });
   }
   const at = now.toISOString();
