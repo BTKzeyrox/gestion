@@ -69,6 +69,11 @@ badM({ date: '2026-02-31' }, 'date', 'date inexistante refusée');
 badM({ unit_cost_ar: -5 }, 'cost', 'prix payé négatif refusé');
 ok(srv.cleanStockMove({ ...gm, qty: 1.256 }, undefined, 'a', NOW).save.qty === 1.26, 'quantité arrondie à 2 décimales');
 ok(!srv.cleanStockMove(null, undefined, 'a', NOW).ok, 'mouvement vide (null) refusé sans erreur');
+// E8 : un mouvement créé par une ligne de travail validée garde l'identifiant de la ligne (entrée ou sortie seulement) ; site et serveur pareils
+ok(srv.cleanStockMove({ ...gm, work_post_id: 'w1' }, undefined, 'a', NOW).save.work_post_id === 'w1' && srv.cleanStockMove({ ...gm, type: 'out', work_post_id: 'w1' }, undefined, 'a', NOW).save.work_post_id === 'w1', 'E8 : entrée ou sortie : l\'identifiant de la ligne de travail est gardé');
+ok(srv.cleanStockMove({ ...gm, type: 'adjust', qty: 2, work_post_id: 'w1' }, undefined, 'a', NOW).save.work_post_id === undefined && srv.cleanStockMove({ ...gm, work_post_id: 5 }, undefined, 'a', NOW).save.work_post_id === undefined && srv.cleanStockMove({ ...gm }, undefined, 'a', NOW).save.work_post_id === undefined, 'E8 : pas de lien pour un ajustement, ni si l\'identifiant est faux ou absent');
+ok(srv.cleanStockMove({ ...gm, work_post_id: 'x'.repeat(200) }, undefined, 'a', NOW).save.work_post_id.length === 80, 'E8 : l\'identifiant est limité à 80 caractères');
+ok((S.checkMoveDraft({ product_id: 'p', type: 'out', qty: 2, date: '2026-10-20', work_post_id: 'w1' }) as any).clean.work_post_id === 'w1' && (S.checkMoveDraft({ product_id: 'p', type: 'adjust', qty: 2, date: '2026-10-20', work_post_id: 'w1' }) as any).clean.work_post_id === undefined && (S.checkMoveDraft({ product_id: 'p', type: 'in', qty: 2, date: '2026-10-20' }) as any).clean.work_post_id === undefined, 'E8 écran : même règle que le serveur pour l\'identifiant de la ligne');
 
 // ---------- 2) Serveur : les protections sont branchées (lecture du code) ----------
 const syncFn = /async function sync\([\s\S]*?\n}\n/.exec(src)?.[0] || '';

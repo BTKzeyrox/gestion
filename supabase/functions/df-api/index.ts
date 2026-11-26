@@ -477,6 +477,7 @@ function cleanStockMove(rec: any, existing: any, meId: string, now: string): { o
       ...(rec.cash_id ? { cash_id: String(rec.cash_id).slice(0, 80) } : {}),
       ...(typeof rec.supplier_id === "string" && rec.supplier_id ? { supplier_id: rec.supplier_id.slice(0, 80) } : {}), // module 4 : l'existence est contrôlée dans sync
       ...(typeof rec.po_id === "string" && rec.po_id ? { po_id: rec.po_id.slice(0, 80) } : {}),
+      ...((type === "in" || type === "out") && typeof rec.work_post_id === "string" && rec.work_post_id ? { work_post_id: rec.work_post_id.slice(0, 80) } : {}), // E8 : la ligne de travail validée qui a créé ce mouvement
       ...(inv || {}),
       created_by: existing?.created_by || meId, created_at: existing?.created_at || now, updated_at: now,
     },

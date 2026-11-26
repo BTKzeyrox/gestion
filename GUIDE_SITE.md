@@ -815,6 +815,7 @@ Versions du serveur en ligne : voir `AI_STUDIO.md` (chaque déploiement note la 
 | `workLineText.ts` | Texte d'une ligne de travail (feuille du jour, M26.5) pour les listes de validation et l'historique : présence, heures, quantité et refusées, sans score ni preuve. |
 | `workMode.ts` | « Ma façon de travailler » (module 19, M19.5) : sur le SITE (le tableau de la mission est préparé tout seul) ou sur un EXCEL EXTERNE |
 | `workRulesText.ts` | Règles écrites d'un type de travail (Réglages > Types de travail et paie) : ce que le site DEMANDE, COMPTE et PAIE pour ce type. |
+| `workStock.ts` | Lien facultatif entre le travail validé et le stock (E8, TODO_SUIVI_PAIE.md). Règles PURES : aucun réseau, aucune donnée, aucune horloge. |
 | `workTypes.ts` | Types de travail, modes de paie et modèles d'entreprise (module 26, M26.2) : règles pures, SANS écran, SANS serveur, SANS réseau, SANS horloge. |
 | `xlsxA4.ts` | Excel au format A4 (règle de BTK) : Times New Roman 12, page A4 prête à imprimer, texte jamais rétréci. |
 
@@ -1305,6 +1306,7 @@ Un fichier nouveau ou changé de rôle met son en-tête à jour dans le même co
 | `npm run check:treasury-charts` | Graphiques de la Trésorerie : calculs purs, jamais de salaires ; et calendrier d'un employé au style du global. |
 | `npm run check:graphs` | Page « Graphiques » (responsable) : tous les graphiques sur une seule page, 16 cartes, filtres clairs, une période pour toutes. |
 | `npm run check:work-types` | Types de travail, modes de paie et modèles d'entreprise (module 26, M26.2) : règles pures, sans réseau. Cas normaux ET cas piégés. |
+| `npm run check:work-stock` | Lien facultatif travail validé -> stock (E8). Lancer : npm run check:work-stock |
 | `npm run check:payroll-modes` | Paie selon le mode (module 26, M26.4) : le serveur (bloc DECIDE de df-api) et le site (postPay.ts / postDecision.ts) donnent EXACTEMENT les mêmes montants sur des milliers de cas, |
 | `npm run check:sheet-batch` | M27.5 : « Tout valider » une feuille saisie par un chef d'équipe. |
 | `npm run check:month-grid` | M27.10 : grille de présence du mois. |

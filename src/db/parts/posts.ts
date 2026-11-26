@@ -308,9 +308,10 @@ export const postsMethods = defineMethods({
     const me = this.currentUser;
     if (!me || (me.role !== 'admin' && me.role !== 'team_lead')) return { ok: false, error: 'Réservé au responsable et au chef d\'équipe.' };
     const id = newOpId(), nowIso = new Date().toISOString();
+    const knownIds = new Set<string>(this.posts.map(p => p.id)); // E8 : seules les lignes NOUVELLES validées par cet envoi touchent le stock
     const r = await this.sheetCall(sheet, id, nowIso);
     if (r.status >= 200 && r.status < 300) {
-      if (!this.demo) { this.since = ''; void this.pull(true); }
+      if (!this.demo) { this.since = ''; void this.pull(true).then(() => { if (me.role === 'admin') this.applyWorkStockToNew(knownIds); }); }
       return { ok: true, saved: Number(r.data?.saved) || 0, failed: Array.isArray(r.data?.failed) ? r.data.failed : [], validated: !!r.data?.validated };
     }
     // Panne, coupure, connexion expirée : la feuille est gardée sur l'appareil avec CE numéro (le serveur a peut-être déjà fait la première demande : il ne la refera pas).
@@ -340,6 +341,7 @@ export const postsMethods = defineMethods({
     const r = await this.api('work-line-cancel', { method: 'POST', body: JSON.stringify({ id: postId }) });
     if (!r.ok) return { ok: false, error: r.data?.error || 'Erreur.' };
     this.posts = this.posts.filter(p => p.id !== postId);
+    this.undoWorkStock(postId); // E8 : la ligne annulée retire son mouvement de stock, s'il y en a un
     this.notify();
     return { ok: true };
   },
@@ -397,7 +399,7 @@ export const postsMethods = defineMethods({
         setTimeout(() => { if (this.pendingDecisions.get(id) === entry) { this.pendingDecisions.delete(id); this.emit(); } }, 20000); // filet : jamais bloqué
       }
       this.since = '';
-      void this.pull(true); // en arrière-plan : le vrai état (paie, prix client, totaux) arrive sans bloquer l'écran
+      void this.pull(true).then(() => { if (approve) this.applyWorkStock(id); }); // en arrière-plan : le vrai état (paie, prix client, totaux) arrive sans bloquer l'écran ; E8 : puis le lien facultatif avec le stock (admin seulement, jamais bloquant)
       return { ok: true };
     })();
     return { ok: true, settled };

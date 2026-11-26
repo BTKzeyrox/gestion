@@ -5,6 +5,7 @@ import type { AppStore } from '../store';
 import { defineMethods } from './define';
 import { categoryKey, categoryOptions, checkMoveDraft, checkProductDraft, cleanCategoryList, cleanCategoryName, cleanSpaceList, DEFAULT_STOCK_CATEGORIES, DEFAULT_STOCK_SPACES, newSpaceId, productStorage, purchaseAmount, quantities, STOCK_SPACE_MAX, type MoveDraft, type ProductDraft, type StockSpace } from '../../utils/stock';
 import { isMoneyRole } from '../../utils/roles';
+import { workStockMove, findWorkTypeById } from '../../utils/workStock';
 import { Product, StockMove } from '../../types';
 
 export const stockMethods = defineMethods({
@@ -133,6 +134,49 @@ export const stockMethods = defineMethods({
     this.stockMoves = [{ id, ...v.clean, ...(cashId ? { cash_id: cashId } : {}), created_by: this.currentUser.id, created_at: now, updated_at: now }, ...this.stockMoves];
     this.notify();
     return { success: true, id, cashId };
+  },
+
+  /**
+   * E8 : à la validation d'une ligne de travail, applique le lien FACULTATIF de son type avec le stock (règles : utils/workStock.ts).
+   * Réservé à l'admin (le stock lui appartient). JAMAIS bloquant : la ligne est déjà validée ; on dit seulement pourquoi rien n'a été fait.
+   * JAMAIS en double : le mouvement garde l'identifiant de la ligne. Un avertissement (produit supprimé, stock insuffisant) part en événement `df-stock-notice`.
+   */
+  applyWorkStock(postId: string): { done: boolean; skip?: string; error?: string } {
+    try {
+      if (!this.currentUser || !isMoneyRole(this.currentUser.role)) return { done: false, skip: 'role' };
+      const post = this.posts.find(p => p.id === postId);
+      const r = workStockMove(post, findWorkTypeById(post?.work_type, this.getCustomWorkTypes()), new Set<string>(this.products.map(p => p.id)), this.stockMoves);
+      if (!('move' in r)) {
+        if (r.skip === 'product') this.workStockNotice(postId, 'product');
+        return { done: false, skip: r.skip };
+      }
+      const a = this.addStockMove(r.move);
+      if (!a.success) { this.workStockNotice(postId, a.error || 'error'); return { done: false, error: a.error }; }
+      return { done: true };
+    } catch { return { done: false, error: 'error' }; }
+  },
+
+  /** Après l'envoi d'une feuille par l'admin : applique le lien aux lignes NOUVELLES (absentes de la liste d'avant l'envoi) et déjà validées. */
+  applyWorkStockToNew(knownIds: Set<string>): number {
+    let n = 0;
+    for (const p of this.posts) if (!knownIds.has(p.id) && p.work_type && p.status === 'completed' && this.applyWorkStock(p.id).done) n++;
+    return n;
+  },
+
+  /** Une ligne de travail annulée retire son mouvement de stock (s'il y en a un). Refusé en silence si cela rendrait le stock négatif : l'admin corrige alors à la main. */
+  undoWorkStock(postId: string): boolean {
+    try {
+      const m = this.stockMoves.find(x => x.work_post_id === postId);
+      if (!m || !this.currentUser || !isMoneyRole(this.currentUser.role)) return false;
+      const r = this.deleteStockMove(m.id);
+      if (!r.success) this.workStockNotice(postId, r.error || 'error');
+      return r.success;
+    } catch { return false; }
+  },
+
+  /** Avertissement non bloquant, affiché par l'écran qui l'écoute (événement `df-stock-notice`). */
+  workStockNotice(postId: string, reason: string): void {
+    if (typeof window !== 'undefined' && typeof CustomEvent !== 'undefined') window.dispatchEvent(new CustomEvent('df-stock-notice', { detail: { post_id: postId, reason } }));
   },
 
   /** Supprime un mouvement (la quantité se recalcule). Refusé si cela rendrait le stock négatif. La dépense liée, s'il y en a une, reste : elle se supprime dans Finances. */

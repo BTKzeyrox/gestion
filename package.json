@@ -222,6 +222,7 @@
     "check:treasury-charts": "tsx scripts/check-treasury-charts.ts",
     "check:graphs": "tsx scripts/check-graphs.ts",
     "check:work-types": "tsx scripts/check-work-types.ts",
+    "check:work-stock": "tsx scripts/check-work-stock.ts",
     "check:payroll-modes": "esbuild scripts/check-payroll-modes.ts --bundle --platform=node --format=esm --packages=external --target=node20 --define:import.meta.env={} --log-level=error --outfile=node_modules/.cache/check-payroll-modes.mjs && node node_modules/.cache/check-payroll-modes.mjs",
     "check:sheet-batch": "npx --yes tsx scripts/check-sheet-batch.ts",
     "check:month-grid": "npx --yes tsx scripts/check-month-grid.ts",

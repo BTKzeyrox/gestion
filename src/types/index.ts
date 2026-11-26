@@ -519,6 +519,7 @@ export interface StockMove {
   cash_id?: string; // dépense « Achats » créée avec cette entrée (S3.3)
   supplier_id?: string; // fournisseur de cette entrée (module 4)
   po_id?: string; // bon de commande reçu (module 4)
+  work_post_id?: string; // E8 : la ligne de travail validée qui a créé ce mouvement (une ligne = un seul mouvement)
   reason?: 'inventory'; // ajustement fait après un comptage physique (module 4)
   counted_qty?: number; // inventaire : quantité comptée
   expected_qty?: number; // inventaire : quantité que le stock indiquait
