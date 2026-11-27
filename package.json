@@ -224,6 +224,7 @@
     "check:work-types": "tsx scripts/check-work-types.ts",
     "check:work-stock": "tsx scripts/check-work-stock.ts",
     "check:my-day": "tsx scripts/check-my-day.ts",
+    "check:emp-tracking": "tsx scripts/check-emp-tracking.ts",
     "check:start-assistant": "tsx scripts/check-start-assistant.ts",
     "check:payroll-modes": "esbuild scripts/check-payroll-modes.ts --bundle --platform=node --format=esm --packages=external --target=node20 --define:import.meta.env={} --log-level=error --outfile=node_modules/.cache/check-payroll-modes.mjs && node node_modules/.cache/check-payroll-modes.mjs",
     "check:sheet-batch": "npx --yes tsx scripts/check-sheet-batch.ts",

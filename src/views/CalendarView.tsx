@@ -43,6 +43,7 @@ import { dayDetail, minutesText } from '../utils/dayDetail';
 import { roleLabel, type NewsRole } from '../utils/newsAccess';
 import { onlineBadge, arrivalLine, lastSeenOf } from '../utils/attendanceView';
 import { Avatar } from '../components/Avatar';
+import { EmpTrackingSheet } from '../components/EmpTrackingSheet';
 import { NAV_TARGET_EVENT, peekNavTarget } from '../utils/navTarget';
 import { useApp } from '../context/AppContext';
 import { showShift } from '../utils/shiftMode';
@@ -110,7 +111,7 @@ const CellChip: React.FC<{ kind: 'present' | 'done'; n: number }> = ({ kind, n }
 };
 
 // ============================ CALENDRIER GLOBAL (tous les employés) : mois, résumé, jour ============================
-type GView = 'month' | 'summary' | 'day';
+type GView = 'month' | 'summary' | 'day' | 'follow';
 interface GlobalCalProps {
   year: number; month: number; today: string; list: User[]; posts: PostSession[]; leaves: Leave[]; advances: SalaryAdvanceRequest[]; cfg: AppSettings;
   clientFilter: string; statusFilter: StatusFilter; leaveFilter: LeaveFilter; first: Record<string, string>;
@@ -294,7 +295,7 @@ const GlobalCalendar: React.FC<GlobalCalProps> = ({ year, month, today, list, po
 
   return (
     <div className="space-y-3" data-testid="global-calendar">
-      <div className="flex flex-wrap items-center gap-1.5">{tab('month', 'Mois')}{tab('summary', 'Résumé')}{tab('day', 'Vue du jour')}
+      <div className="flex flex-wrap items-center gap-1.5">{tab('month', 'Mois')}{tab('summary', 'Résumé')}{tab('day', 'Vue du jour')}{tab('follow', 'Suivi')}
         {leaveFilter !== 'all' && <span className={`ml-auto text-[11px] font-semibold ${sub}`}>{leaveFilter === 'approved' ? 'Congés acceptés' : 'Demandes de congé en attente'} · {list.length} employé{list.length > 1 ? 's' : ''}</span>}
       </div>
 
@@ -370,6 +371,11 @@ const GlobalCalendar: React.FC<GlobalCalProps> = ({ year, month, today, list, po
 
       {list.length > 0 && view === 'day' && (
         <DayPanel day={selDay} setDay={setSelDay} {...panelProps} />
+      )}
+
+      {/* E9 : fiche de suivi par employé (présences, retards, absences, heures ou quantités, validations en attente) */}
+      {list.length > 0 && view === 'follow' && (
+        <EmpTrackingSheet viewer={db.getCurrentUser() as User} onlyIds={list.map(u => u.id)} onPick={onPickEmployee} />
       )}
 
     </div>

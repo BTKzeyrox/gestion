@@ -1,7 +1,7 @@
 # TODO : suivi des employés par type de paie, présence, stock
 
 Écrit le 23/11/2026 d'après la discussion de BTK (avec Manus puis avec Claude).
-**Aucun code n'est écrit. On attend le « GO » de BTK avant de coder.**
+**E1 à E9 : code écrit et poussé (voir les étapes ci-dessous : ce qui est fait, testé en local, et ce qui reste à regarder en vrai).**
 Règle : pas de changement du calcul de paie ni de la base Supabase sans décision de BTK, sauvegarde avant, et un déploiement traité à part.
 
 ## 1. Ce que BTK veut (décidé)
@@ -51,7 +51,8 @@ Le site est basé sur des **tâches**. Un employé payé **à l'heure** voit enc
 - [x] **E2. Le type de paie suit l'employé** : **déjà présent** (24/11, vérifié dans le code) : la fiche employé (`EmployeesManagement.tsx`) a un choix de type de paie et un tarif propre ; « comme l'entreprise » par défaut. **Règle d'or du code** (`postPay.ts`) : une mission normale reste payée au prix fixe par mission, quel que soit le type ; le type de paie ne s'applique qu'aux **lignes de la Feuille du jour** (saisies par le chef ou le responsable). À savoir pour E3 et E5.
 - [x] **E3. L'affichage suit le type de paie** : plus d'« objectif » ni de « tâche atteinte » pour un employé à l'heure, etc. (voir le tableau du § 2). Calendrier et détails synchronisés.
   - [x] (24/11) **Décision prise par défaut** (BTK : « go, ne m'interromps pas ») : l'« objectif » n'a de sens que pour une **mission**. Un jour travaillé **seulement par la Feuille du jour** (heures, pièces, présence) s'affiche « **Présent (feuille du jour)** » au lieu de « Objectif atteint » dans la ligne de la personne du calendrier global. Le code interne `objective_reached` ne change pas (calculs et contrôles). Contrôles ajoutés dans `check-calendar-worktypes.ts`.
-  - [ ] Reste à faire plus tard : adapter de la même façon la légende, le calendrier personnel de l'employé et les tableaux admin (« Objectif » dans `AdminDashboard`, `StatsPage`).
+  - [x] (27/11) **Reste de E3 fait** : « Objectif atteint » n'est écrit que pour une personne payée **à la mission** ; pour les autres types de paie la **légende**, le **filtre « Statut du mois »** et les **pastilles du calendrier personnel** disent « Présent » ; types mélangés (calendrier global) : « Présent / objectif atteint » (`objectiveWord` dans `dayStatus.ts`, `payModeFor` pour le type de chaque employé). Le code interne `objective_reached` ne change pas. **Tableaux admin :** relus, `AdminDashboard`, `DayDetailsModal` et `EmployeeDashboard` écrivent « Objectif » pour le **score cible d'une mission** (vrai pour une mission) ; `StatsPage` et `TeamGoalsSection` parlent d'objectifs de missions du mois : rien à changer là.
+  - [ ] À regarder sur le site en ligne (après Vercel) : légende et filtre pour un employé à l'heure (je n'ai pas vu l'écran, seuls les contrôles du code ont tourné).
 - [ ] **E4. Présence à la validation** : la case du jour écrit l'heure d'envoi, l'heure de validation et « présent ». Avant la validation, l'employé est « en attente ».
   - Recommandation : le **retard se calcule sur l'heure d'envoi**, pas sur l'heure de validation.
   - [x] (24/11) **Heures d'envoi et de validation affichées** sur les lignes de la Feuille du jour, dans le détail du jour du calendrier (« envoi 07:00 · validé 07:15 », heure de Madagascar). Affichage seulement ; le serveur posait déjà ces heures (`start_sent_at`, `end_validated_at`). Contrôle ajouté dans `check-day-detail.ts`.
@@ -109,7 +110,15 @@ Le site est basé sur des **tâches**. Un employé payé **à l'heure** voit enc
   - [ ] **À tester sur le site en ligne (après Vercel)** : créer un produit, créer un type « quantité » lié à ce produit, saisir et valider une ligne, voir le mouvement dans le Stock ; annuler la ligne et voir le mouvement partir.
   - [ ] Limite : le lien se règle à la **création** d'un type. Pour changer le lien d'un type existant, il faut le supprimer et le recréer (les saisies déjà faites restent). Un écran de modification reste à faire.
   - [ ] Retour fournisseur (M23.6) : reste une décision séparée, hors de E8.
-- [ ] **E9. Fiche de suivi par employé** pour le responsable et le chef d'équipe : présences, retards, absences, heures ou quantités, validations en attente. Le chef d'équipe ne voit que son équipe. Les salaires restent cachés aux rôles non autorisés.
+- [x] **E9. Fiche de suivi par employé** (27/11) pour le responsable et le chef d'équipe : présences, retards, absences, heures ou quantités, validations en attente. Le chef d'équipe ne voit que son équipe. Les salaires restent cachés aux rôles non autorisés.
+  - **Règles pures** : `src/utils/empTracking.ts` (`trackedEmployees`, `trackingRows`, `measuresFor`, `measureText`, 29 contrôles dans `check:emp-tracking`). Qui voit qui : le responsable tous les opérateurs ; le chef d'équipe seulement les opérateurs de **son équipe** (jamais lui-même, sans équipe = personne) ; comptable et opérateur : personne. Les compteurs de présence, retard, absence et congé sont **ceux du calendrier** (`globalSummary`, même règle).
+  - **Écran** : `src/components/EmpTrackingSheet.tsx`, une fiche par employé et un choix du mois : type de paie, présents / absences / retards / congés, missions, **validations en attente** (tous les mois, la feuille du jour comptée à part), **heures, quantité, refusées et montant vendu** des lignes de feuille **validées** type par type (une ligne refusée ou en attente n'entre pas dans les totaux), dernier envoi et dernière validation (heure de Madagascar).
+  - **Où** : onglet **« Suivi »** du calendrier global (responsable ; les filtres du calendrier s'appliquent ; un clic sur le nom ouvre le calendrier de la personne) et bas de la page **« Validations de mon équipe »** (chef d'équipe). **Aucune nouvelle entrée de menu.**
+  - **Salaire** : visible seulement pour le responsable (`pay` vaut `null` pour les autres et l'écran ne l'affiche pas ; contrôlé).
+  - **Aucun changement du serveur, de la base ni de la paie** : lecture seule des données que le site a déjà. Rien à redéployer.
+  - [ ] **À regarder sur le site en ligne (après Vercel)** : onglet Suivi en responsable, page Validations en chef d'équipe (avec et sans équipe). Je n'ai pas vu l'écran, seuls les contrôles du code ont tourné.
+  - [ ] Limite : le chef d'équipe ne reçoit peut-être pas les **congés** de son équipe (`db.getLeaves()`) : dans ce cas ses fiches comptent 0 jour de congé ; à vérifier en vrai.
+  - [ ] Limite : le retard affiché reste celui du calendrier (début de la première mission) ; le calcul sur l'heure d'envoi reste à décider (E4).
 
 ## 4. À décider avec BTK
 
@@ -129,7 +138,7 @@ Le site est basé sur des **tâches**. Un employé payé **à l'heure** voit enc
 
 ## 6. État au 24/11 et conception des étapes restantes (pour qui reprend)
 
-**Fait et poussé (affichage seulement, aucun changement de paie, de base ni de serveur) :** E1 (lecture du code), E2 (déjà présent), E3 (jour de feuille = « Présent (feuille du jour) » dans le calendrier global), E4 en partie (heures d'envoi et de validation sur les lignes de la feuille).
+**Fait et poussé (affichage seulement, aucun changement de paie, de base ni de serveur) :** E1 (lecture du code), E2 (déjà présent), E3 (jour de feuille = « Présent (feuille du jour) » dans le calendrier global ; 27/11 : légende, filtre et calendrier personnel suivent le type de paie), E4 en partie (heures d'envoi et de validation sur les lignes de la feuille), E9 (27/11 : fiche de suivi).
 
 **✅ Décision de BTK (24/11) : A.** `gestion` garde ses changements ; les mises à niveau sur Nprojet se font par fusion (voir `PLAN_IMPORTANT.md` § 2 ter). Le risque ci-dessous est donc réglé si la fusion est respectée.
 

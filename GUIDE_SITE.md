@@ -76,6 +76,7 @@ Chaque fiche ci-dessous est la même que celle que l'assistant du site utilise (
   - Connexion hors horaires : la personne écrit une raison ; tu autorises (fin de vacation, 1 à 12 h ou heure précise) ou tu refuses avec un motif.
   - Un refus demande un motif si le réglage « motif de refus obligatoire » est activé.
   - Le prix de la mission est figé au moment de la validation.
+  - Chef d'équipe (E9) : sous ses validations, la page « Validations de mon équipe » montre la fiche de suivi de SON équipe seulement (présents, absences, retards, heures ou quantités, validations en attente). Jamais de salaire ni de montant de paie ; sans équipe, un message l'invite à en demander une au responsable.
   - La Santé du site signale une mission en attente depuis plus de 24 h (réglable).
   - « Feuilles du jour à valider » : « Tout valider » valide en une fois les lignes d'un chef d'équipe (2 touches). Le refus reste ligne par ligne, avec un motif.
 - **Chiffres et formules** :
@@ -298,6 +299,8 @@ Chaque fiche ci-dessous est la même que celle que l'assistant du site utilise (
   - Un clic sur un jour (calendrier global ou d'un seul employé) ouvre une fenêtre avec le détail de ce jour (flèches jour précédent / suivant) ; on reste sur le mois.
   - Dans cette fenêtre : heures d'arrivée et de départ, temps en ligne, et chaque mission (heures, durée, score, paie).
   - Filtre Congés : « Acceptés » ou « En attente » ne garde que les employés concernés ce mois-ci. Les demandes refusées ne comptent jamais.
+  - Onglet « Suivi » (E9) du calendrier global : une fiche par employé (les filtres s'appliquent) avec présents, absences, retards, congés, missions, validations en attente (tous mois confondus, la feuille du jour à part), heures / quantités / refusées / montant vendu des lignes de feuille VALIDÉES type par type, dernier envoi et dernière validation. Le responsable y voit aussi la paie du mois.
+  - Mot du statut (E3) : « Objectif atteint » seulement pour une personne payée à la mission ; pour les autres types de paie (heure, jour, pièce, commission, fixe) la légende, le filtre et les pastilles du calendrier personnel disent « Présent » ; types mélangés : « Présent / objectif atteint ». « Objectif » reste écrit là où il s'agit du score cible d'une mission.
   - Le résumé du mois additionne jours travaillés, absences, retards, congés (sans les dimanches), missions et paie de tous les employés affichés.
   - Vue du jour : une ligne par employé avec son statut, sa 1re mission, sa dernière fin, son arrivée et son départ. Le retard se mesure sur la 1re mission.
   - Arrivée = 1re connexion du jour. Départ = déconnexion, ou « estimé » (dernier signe de vie) si l'appli est fermée. Chef d'équipe et comptable sont suivis aussi.
@@ -655,6 +658,7 @@ Versions du serveur en ligne : voir `AI_STUDIO.md` (chaque déploiement note la 
 | `deepLink.ts` | Lien exact d'une notification externe (push) : le clic ouvre la bonne page, au bon élément, avec le même clignotement de 1,5 s que la cloche. |
 | `direction.ts` | Page « Direction » (module 8, M8.1) : UNE page de synthèse pour le responsable. Règle pure, sans écran ni serveur. |
 | `drafts.ts` | Brouillons de texte (BTK, 2026-11-12) : ce qu'on tape sans l'avoir envoyé est gardé sur l'appareil et remis au retour (changement d'application, rechargement, réseau coupé). |
+| `empTracking.ts` | Fiche de suivi par employé (E9) : règles pures, sans écran ni réseau. |
 | `enTranslate.ts` | Traduit l'interface française en anglais en remplaçant les textes de la page (dictionnaire enDict.json) ; agit sur la page du navigateur. |
 | `entryOnly.ts` | Employé « suivi par saisie seulement » (module 26, M26.7) : règles pures, sans écran, sans serveur. |
 | `errorReport.ts` | Rapports d'erreur : construction, mémoire locale (20 derniers), envoi limité au journal, texte à copier. |
@@ -963,6 +967,7 @@ Versions du serveur en ligne : voir `AI_STUDIO.md` (chaque déploiement note la 
 | `DayDetailsModal.tsx` | Fenêtre du détail d'une journée du calendrier : missions du jour, points gagnés, présence, preuves et contrats à échéance. |
 | `DeadlineFields.tsx` | Champs « date limite, heure, priorité » d'une mission (DeadlineFields) et pastilles d'échéance et de priorité sur une carte (DeadlineBadges). |
 | `DiagPanel.tsx` | Panneau de diagnostic du défilement de la page, affiché seulement quand l'adresse contient ?diag=1. |
+| `EmpTrackingSheet.tsx` | Fiche de suivi par employé (E9) : présences, retards, absences, heures ou quantités, validations en attente. |
 | `ErrorBoundary.tsx` | Écran de secours quand une page plante : numéro d'incident, boutons Réessayer, vider le cache, copier le rapport et se déconnecter. |
 | `FileViewerModal.tsx` | Visionneuse plein écran de fiches (PDF, texte) avec Retour, Télécharger, Ouvrir à part et Supprimer. |
 | `FilterBar.tsx` | Barre de filtres commune (M22.7) : une rangée de boutons, même style et même place sur toutes les pages, un chiffre sur chacun ; à 0 le filtre reste visible mais grisé. |
@@ -1312,6 +1317,7 @@ Un fichier nouveau ou changé de rôle met son en-tête à jour dans le même co
 | `npm run check:work-types` | Types de travail, modes de paie et modèles d'entreprise (module 26, M26.2) : règles pures, sans réseau. Cas normaux ET cas piégés. |
 | `npm run check:work-stock` | Lien facultatif travail validé -> stock (E8). Lancer : npm run check:work-stock |
 | `npm run check:my-day` | « Envoyer ma journée » : règles pures de l'écran de l'employé (E5b). Lancer : npm run check:my-day |
+| `npm run check:emp-tracking` | Contrôle E9 (fiche de suivi par employé) et reste de E3 (mot « Présent » ou « Objectif atteint » selon le type de paie). Règles pures + câblage des écrans. |
 | `npm run check:start-assistant` | Assistant de départ : règles pures (E6). Lancer : npm run check:start-assistant |
 | `npm run check:payroll-modes` | Paie selon le mode (module 26, M26.4) : le serveur (bloc DECIDE de df-api) et le site (postPay.ts / postDecision.ts) donnent EXACTEMENT les mêmes montants sur des milliers de cas, |
 | `npm run check:sheet-batch` | M27.5 : « Tout valider » une feuille saisie par un chef d'équipe. |

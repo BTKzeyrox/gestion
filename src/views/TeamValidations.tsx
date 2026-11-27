@@ -11,6 +11,7 @@ import { teamPendingPosts } from '../utils/teamLead';
 import { isWorkLine } from '../utils/postPay';
 import { workLineDetail, workLineBy } from '../utils/workLineText';
 import { SafeImage } from '../components/SafeImage';
+import { EmpTrackingSheet } from '../components/EmpTrackingSheet';
 
 type Lightbox = (p: { imageUrl: string; gallery?: string[]; title: string; subtitle?: string; score?: number; clientTag?: string; operatorName?: string; timestamp?: string }) => void;
 
@@ -97,6 +98,7 @@ export const TeamValidations: React.FC<{ currentUser: User; onOpenProofLightbox:
           );
         })}
       </ul>
+      {team && <div className="pt-2"><EmpTrackingSheet viewer={me} /></div>}
     </section>
   );
 };
