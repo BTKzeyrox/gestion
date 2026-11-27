@@ -68,13 +68,13 @@ export function collectionPolicy(role: Role, collection: string, rec?: { status?
 
 const BOTH_CALLS = new Set(['upload', 'report-error', 'news-comment', 'news-comment-delete', 'news-share', 'news-react', 'news-submit', 'news-withdraw']);
 const ADMIN_CALLS = new Set(['post-decide', 'news-decision']);
-const SHEET_CALLS = new Set(['work-entry']); // feuille du jour (M26.5d, M27.9) : le responsable ET le chef d'équipe la saisissent sans réseau ; elle part au retour du réseau, une seule fois (numéro d'action)
+const SHEET_CALLS = new Set(['work-entry']); // feuille du jour (M26.5d, M27.9) : le responsable, le chef d'équipe ET l'employé (E5b, si l'entreprise l'a permis : le serveur refuse sinon) la saisissent sans réseau ; elle part au retour du réseau, une seule fois (numéro d'action)
 const MONEY_CALLS = new Set<string>([]);
 const ACCOUNT_CALLS = new Set(['login', 'forgot', 'signup', 'signup-decision', 'create-user', 'set-password', 'reset-decision', 'profile-request', 'profile-decision']);
 
 /** Un appel direct au serveur (route) peut-il attendre ? Route inconnue = en ligne (le plus sûr). */
 export function callPolicy(role: Role, route: string): Verdict {
-  if (SHEET_CALLS.has(route) && (role === 'admin' || role === 'team_lead')) return Q;
+  if (SHEET_CALLS.has(route) && (role === 'admin' || role === 'team_lead' || role === 'employee')) return Q;
   if (role !== 'admin' && role !== 'employee') return other;
   if (BOTH_CALLS.has(route)) return Q;
   if (SHEET_CALLS.has(route)) return { mode: 'online', why: { fr: 'Réservé au responsable et au chef d\'équipe.', en: 'Manager and team lead only.' } };

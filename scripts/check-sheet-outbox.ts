@@ -12,9 +12,9 @@ const sheet = (date = '2026-11-10', n = 3) => ({ date, type_label: 'Présence', 
 
 // ---- Qui peut ----
 ok(callPolicy('admin', 'work-entry').mode === 'queue' && callPolicy('team_lead', 'work-entry').mode === 'queue', 'responsable ET chef d\'équipe : la feuille peut attendre');
-ok(callPolicy('employee', 'work-entry').mode === 'online' && callPolicy('accountant', 'work-entry').mode === 'online', 'opérateur et comptable : en ligne seulement');
+ok(callPolicy('employee', 'work-entry').mode === 'queue' && callPolicy('accountant', 'work-entry').mode === 'online', 'employé (E5b) : sa journée peut attendre ; comptable : en ligne seulement'); // le serveur refuse si l'entreprise n'a pas permis l'envoi par l'employé
 ok(['upload', 'post-decide', 'news-comment', 'news-share', 'login', 'invoice-issue'].every(r => callPolicy('team_lead', r).mode === 'online'), 'le chef d\'équipe n\'obtient rien d\'autre hors ligne');
-ok(queueSheet([], sheet(), 'employee', T0).error !== undefined && queueSheet([], sheet(), 'accountant', T0).error !== undefined, 'un opérateur ou un comptable ne peut pas mettre une feuille en file');
+ok(queueSheet([], sheet(), 'employee', T0).error === undefined && queueSheet([], sheet(), 'accountant', T0).error !== undefined, 'l\'employé (E5b) peut mettre sa journée en file ; un comptable non');
 
 // ---- Mise en file ----
 let q = queueSheet([], sheet(), 'team_lead', T0, undefined, 'abcdef0123456789').queue;

@@ -38,6 +38,7 @@ import {
 } from 'lucide-react';
 import { User, PostSession, ShiftType, ClientContract } from '../../types';
 import { db } from '../../db/store';
+import { MyDayCard } from '../../components/MyDayCard';
 import { matchContract } from '../../utils/clients';
 import { TaskChecklist } from '../../components/TaskChecklist';
 import { cleanTasks } from '../../utils/taskList';
@@ -564,6 +565,8 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({
       )}
 
       <QueueButton userId={currentUser.id} />
+
+      <MyDayCard />
 
       {/* Top Banner: Terminal Status */}
       <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 bg-[#0f1722] p-4 rounded-xl border border-slate-800 shadow-xl">

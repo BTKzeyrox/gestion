@@ -703,6 +703,7 @@ Versions du serveur en ligne : voir `AI_STUDIO.md` (chaque déploiement note la 
 | `moduleSwitch.ts` | Interrupteur de modules : le responsable peut CACHER des pages du menu (rien n'est supprimé, les données restent). |
 | `monthGrid.ts` | Grille de présence du mois (M27.10) : les personnes en lignes, les jours en colonnes, P / R / ½ / A et le total de jours. Règles pures, sans écran ni serveur. |
 | `monthLevel.ts` | Niveau de performance d'un opérateur = nombre de missions VALIDÉES dans le mois (du 1er au dernier jour, heure de Madagascar). Règle pure, calculée, jamais donnée à la main. |
+| `myDay.ts` | « Envoyer ma journée » (E5b, TODO_SUIVI_PAIE.md) : l'employé envoie lui-même sa ligne ; elle attend la validation du chef d'équipe ou du responsable. |
 | `navIntent.ts` | Filtre à appliquer sur la page Validations quand on arrive depuis une notification |
 | `navTarget.ts` | « Va exactement à cet élément » : une page marque ses éléments avec data-nav="...", |
 | `newsAccess.ts` | Actualités : qui peut publier, qui peut modifier, qui peut voir (règles pures, copie identique dans supabase/functions/df-api/index.ts, bloc NEWSACCESS ; contrôlé par scripts/check-news-access.ts) |
@@ -979,6 +980,7 @@ Versions du serveur en ligne : voir `AI_STUDIO.md` (chaque déploiement note la 
 | `MessageTools.tsx` | Messagerie S4 (2026-11-09) : « Programmer un message » et « Modèles » (fenêtres du menu « + » du chat). Règles : utils/chatTemplates.ts. Utilisé par : ChatView.tsx. |
 | `MissionGuide.tsx` | Guide d'une mission en quatre étapes avec le justificatif attendu : contenu (MissionGuideContent), bouton d'aide (MissionGuideButton) et liste de contrôle du responsable (AdminChecklist). |
 | `MissionTemplatesSection.tsx` | Section des Réglages pour gérer les modèles de mission : créer, modifier et supprimer, avec le type et le justificatif demandé. |
+| `MyDayCard.tsx` | « Envoyer ma journée » (E5b, TODO_SUIVI_PAIE.md) : l'employé envoie lui-même sa ligne (présence, heures, quantité ou montant vendu) ; elle attend la validation |
 | `MyPayroll.tsx` | Page de l'opérateur pour sa paie : période en cours, fiches de paie détaillées, impression, PDF et Excel, plus le plafond d'avance (useAdvanceRoom, AdvanceRoomInfo). |
 | `MyPerformance.tsx` | Page « Ma performance » de l'opérateur : son score et ses badges avec le pourquoi, jamais ceux des autres. |
 | `MySheets.tsx` | Page « Mes tableaux » : saisie de tableaux type Excel (formules, filtres, import, export Excel, Word et impression) pour l'opérateur. |
@@ -1307,6 +1309,7 @@ Un fichier nouveau ou changé de rôle met son en-tête à jour dans le même co
 | `npm run check:graphs` | Page « Graphiques » (responsable) : tous les graphiques sur une seule page, 16 cartes, filtres clairs, une période pour toutes. |
 | `npm run check:work-types` | Types de travail, modes de paie et modèles d'entreprise (module 26, M26.2) : règles pures, sans réseau. Cas normaux ET cas piégés. |
 | `npm run check:work-stock` | Lien facultatif travail validé -> stock (E8). Lancer : npm run check:work-stock |
+| `npm run check:my-day` | « Envoyer ma journée » : règles pures de l'écran de l'employé (E5b). Lancer : npm run check:my-day |
 | `npm run check:payroll-modes` | Paie selon le mode (module 26, M26.4) : le serveur (bloc DECIDE de df-api) et le site (postPay.ts / postDecision.ts) donnent EXACTEMENT les mêmes montants sur des milliers de cas, |
 | `npm run check:sheet-batch` | M27.5 : « Tout valider » une feuille saisie par un chef d'équipe. |
 | `npm run check:month-grid` | M27.10 : grille de présence du mois. |

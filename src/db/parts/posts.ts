@@ -306,7 +306,7 @@ export const postsMethods = defineMethods({
   /** Feuille du jour (M26.5a) : présence, heures, quantité et refus saisis par le responsable ou le Chef d'équipe. Réponse : nombre de lignes enregistrées et lignes refusées (numéro + raison). Sans réseau (M27.9) : gardée sur l'appareil (`queued`), envoyée au retour du réseau. */
   async addWorkEntries(sheet: { date: string; type_label?: string; lines: any[] }): Promise<{ ok: boolean; error?: string; saved?: number; failed?: { line: number; error: string }[]; validated?: boolean; queued?: boolean }> {
     const me = this.currentUser;
-    if (!me || (me.role !== 'admin' && me.role !== 'team_lead')) return { ok: false, error: 'Réservé au responsable et au chef d\'équipe.' };
+    if (!me || (me.role !== 'admin' && me.role !== 'team_lead' && me.role !== 'employee')) return { ok: false, error: 'Réservé au responsable, au chef d\'équipe et à l\'employé (si l\'entreprise l\'a permis).' }; // E5 : l'employé envoie sa propre ligne, le serveur vérifie le réglage
     const id = newOpId(), nowIso = new Date().toISOString();
     const knownIds = new Set<string>(this.posts.map(p => p.id)); // E8 : seules les lignes NOUVELLES validées par cet envoi touchent le stock
     const r = await this.sheetCall(sheet, id, nowIso);
