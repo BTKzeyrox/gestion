@@ -785,6 +785,7 @@ Versions du serveur en ligne : voir `AI_STUDIO.md` (chaque déploiement note la 
 | `siteSnapshot.ts` | Instantané du site et « Pourquoi ce chiffre ? » (module 11, M11.9). Pur : pas d'écran, pas de serveur. ADMIN SEULEMENT (chiffres d'argent). |
 | `snapshotDb.ts` | Relie l'instantané et « Pourquoi ce chiffre ? » aux données du site. ADMIN SEULEMENT : sans admin, aucune donnée n'est lue. |
 | `splash.ts` | Écran de démarrage « BTK » (défini dans index.html) : retrait en fondu quand le site est prêt. |
+| `startAssistant.ts` | Assistant de départ (E6, TODO_SUIVI_PAIE.md) : au premier contact, l'admin répond à quelques questions et le site se règle (métier, paie par défaut, |
 | `stats.ts` | Règles pures (sans écran, sans serveur) des périodes jour, semaine, mois, année et des chiffres de la page Statistiques. |
 | `statsNav.ts` | Onglet de la page Statistiques gardé d'une visite à l'autre (et réglable depuis l'accueil : un clic sur une alerte ouvre le bon onglet). |
 | `stock.ts` | Stock : règles pures (sans écran, sans serveur). Utilisées par l'onglet « Stock » et par le contrôle `npm run check:stock`. |
@@ -1023,6 +1024,7 @@ Versions du serveur en ligne : voir `AI_STUDIO.md` (chaque déploiement note la 
 | `Sidebar.tsx` | Menu de gauche : profil, entrées de navigation selon le rôle, pastilles de comptage et boutons de thème, déconnexion et signalement. |
 | `SignupSettings.tsx` | Réglages, section Inscriptions : le responsable ouvre ou ferme la création de compte. |
 | `SmartField.tsx` | Champ de saisie intelligent d'une colonne de tableau : dates, nombres, montants, téléphone, heure et suggestions de texte. |
+| `StartAssistant.tsx` | Assistant de départ (E6, TODO_SUIVI_PAIE.md) : une carte en haut du tableau de bord de l'admin, tant qu'aucun métier n'est choisi. 4 questions, une par écran, |
 | `StatCard.tsx` | Carte de chiffre clé : libellé, valeur, unité, variation en pourcentage et mini-courbe. |
 | `TaskChecklist.tsx` | Tâches d'une mission : barre de progression sur la carte, liste à cocher pour l'opérateur et éditeur de la liste. |
 | `ThemeLangControls.tsx` | Petit interrupteur soleil et lune pour le thème, et petite liste pour la langue, dans les Réglages. |
@@ -1310,6 +1312,7 @@ Un fichier nouveau ou changé de rôle met son en-tête à jour dans le même co
 | `npm run check:work-types` | Types de travail, modes de paie et modèles d'entreprise (module 26, M26.2) : règles pures, sans réseau. Cas normaux ET cas piégés. |
 | `npm run check:work-stock` | Lien facultatif travail validé -> stock (E8). Lancer : npm run check:work-stock |
 | `npm run check:my-day` | « Envoyer ma journée » : règles pures de l'écran de l'employé (E5b). Lancer : npm run check:my-day |
+| `npm run check:start-assistant` | Assistant de départ : règles pures (E6). Lancer : npm run check:start-assistant |
 | `npm run check:payroll-modes` | Paie selon le mode (module 26, M26.4) : le serveur (bloc DECIDE de df-api) et le site (postPay.ts / postDecision.ts) donnent EXACTEMENT les mêmes montants sur des milliers de cas, |
 | `npm run check:sheet-batch` | M27.5 : « Tout valider » une feuille saisie par un chef d'équipe. |
 | `npm run check:month-grid` | M27.10 : grille de présence du mois. |

@@ -4,6 +4,7 @@
 import { isWorkLine, postPayAr } from '../../utils/postPay';
 import { workLineDetail, workLineBy } from '../../utils/workLineText';
 import { HealthSummary } from '../../components/HealthSummary';
+import { StartAssistant } from '../../components/StartAssistant';
 import { showToast } from '../../components/ToastHost';
 import React, { useState, useEffect } from 'react';
 import {
@@ -1172,6 +1173,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   return (
     <div className="space-y-3 max-w-none mx-auto px-1.5 sm:px-3 lg:px-4 py-3">
+      {!isValidations && <StartAssistant />}
       {isValidations && (
         <div className="bg-[#0f1722] border border-slate-800 rounded-xl p-3 sm:p-4 space-y-3">
           <div className="flex items-center justify-between gap-2">
