@@ -3,7 +3,8 @@
 // Pour modifier : les données viennent de db (posts, users, avances, congés) ; la vue globale s'ouvre avec selectedId 'all' et le détail d'un jour est partagé par l'onglet et la fenêtre du mois.
 import { isOpenMission, isWorkLine } from '../utils/postPay';
 import React, { useState, useEffect, useMemo } from 'react';
-import { dayStatus, dayLabelOverride } from '../utils/dayStatus';
+import { dayStatus, dayLabelOverride, objectiveWord } from '../utils/dayStatus';
+import { payModeFor } from '../utils/postPay';
 import {
   Calendar as CalendarIcon,
   ChevronLeft,
@@ -89,11 +90,14 @@ const CHIP_CLS: Record<string, string> = {
   objective_reached: 'bg-emerald-500/20 text-emerald-600', late: 'bg-amber-500/20 text-amber-600', in_progress: 'bg-cyan-500/20 text-cyan-600',
   test: 'bg-purple-500/20 text-purple-600', absent: 'bg-red-500/20 text-red-600', leave: 'bg-sky-500/20 text-sky-600',
 };
-const StatusChip: React.FC<{ status: DayStatus; n: number }> = ({ status, n }) => (
-  <span className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[11px] sm:text-xs font-bold ${CHIP_CLS[status] || ''}`} title={STATUS_META[status].label} aria-label={`${STATUS_META[status].label} : ${n}`}>
+const StatusChip: React.FC<{ status: DayStatus; n: number; objWord?: string }> = ({ status, n, objWord }) => {
+  const label = status === 'objective_reached' && objWord ? objWord : STATUS_META[status].label;
+  return (
+  <span className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[11px] sm:text-xs font-bold ${CHIP_CLS[status] || ''}`} title={label} aria-label={`${label} : ${n}`}>
     <StatusIcon status={status} className="w-3 h-3" />{n}
   </span>
-);
+  );
+};
 
 /** Case du jour (calendrier global) : « présent » = à l'heure (un retard n'est pas compté ici) ; « missions faites » = validées, jamais mélangées aux présents. */
 const CellChip: React.FC<{ kind: 'present' | 'done'; n: number }> = ({ kind, n }) => {
@@ -491,6 +495,8 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ currentUser, onSelec
   const activeId = globalMode ? '' : isAdmin ? (list.some(u => u.id === selectedId) ? selectedId : list[0]?.id || '') : currentUser?.id || '';
   const activeUser = users.find(u => u.id === activeId) || null;
   const days = activeId ? buildDays(activeId) : [];
+  // E3 : « Objectif atteint » seulement pour une personne payée à la mission ; sinon « Présent » (plusieurs types : les deux mots)
+  const objWord = useMemo(() => objectiveWord((globalMode ? list : activeUser ? [activeUser] : []).map(u => payModeFor(u, cfg))), [globalMode, list, activeUser, cfg]);
 
   // Résumé du mois
   const summary = useMemo(() => {
@@ -611,7 +617,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ currentUser, onSelec
                 <div className="flex flex-wrap gap-1.5">
                   <button onClick={() => setStatusFilter('all')} className={pill(statusFilter === 'all')}>Tous</button>
                   {(['objective_reached', 'late', 'absent', 'leave', 'in_progress', 'test'] as DayStatus[]).map(st => (
-                    <button key={st} onClick={() => setStatusFilter(st)} className={pill(statusFilter === st)}><StatusIcon status={st} className="w-3.5 h-3.5" /> {STATUS_META[st].label}</button>
+                    <button key={st} onClick={() => setStatusFilter(st)} className={pill(statusFilter === st)}><StatusIcon status={st} className="w-3.5 h-3.5" /> {st === 'objective_reached' ? objWord : STATUS_META[st].label}</button>
                   ))}
                 </div>
               </div>
@@ -717,7 +723,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ currentUser, onSelec
           <div className="flex flex-wrap gap-1.5">
             {(Object.keys(STATUS_META) as DayStatus[]).map(st => (
               <span key={st} className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[11px] font-semibold ${TINT[st]} ${STATUS_META[st].color}`}>
-                <StatusIcon status={st} className="w-3 h-3" /> {STATUS_META[st].label}
+                <StatusIcon status={st} className="w-3 h-3" /> {st === 'objective_reached' ? objWord : STATUS_META[st].label}
               </span>
             ))}
           </div>
@@ -751,7 +757,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ currentUser, onSelec
                       <span className={`text-[11px] sm:text-xs font-bold min-w-[1.5rem] h-6 px-1 rounded-full flex items-center justify-center self-start ${isToday ? 'bg-blue-600 text-white' : txt}`}>{d.day}</span>
                       {d.status !== 'no_post' && (
                         <span className="flex flex-wrap gap-0.5 sm:gap-1" data-cal-chips>
-                          <StatusChip status={d.status} n={['objective_reached', 'in_progress', 'test'].includes(d.status) ? Math.max(1, d.shifts.length) : 1} />
+                          <StatusChip status={d.status} objWord={objWord} n={['objective_reached', 'in_progress', 'test'].includes(d.status) ? Math.max(1, d.shifts.length) : 1} />
                         </span>
                       )}
                     </div>

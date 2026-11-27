@@ -53,3 +53,13 @@ export const SHEET_ONLY_PRESENT_LABEL = 'Présent (feuille du jour)';
 export function dayLabelOverride(status: DayStatus, missions: number, workLines: number): string | null {
   return status === 'objective_reached' && missions === 0 && workLines > 0 ? SHEET_ONLY_PRESENT_LABEL : null;
 }
+
+/** E3 : le mot du statut « objective_reached » selon le type de paie. « Objectif atteint » n'a de sens que pour une personne payée à la mission ; pour les autres types (heure, jour, pièce, commission, salaire fixe) le jour travaillé s'écrit « Présent ». Plusieurs personnes aux types différents : « Présent / objectif atteint ». Le code interne `objective_reached` ne change pas. */
+export const OBJECTIVE_WORD = 'Objectif atteint';
+export const PRESENT_WORD = 'Présent';
+export const MIXED_WORD = 'Présent / objectif atteint';
+export function objectiveWord(payModes: readonly string[]): string {
+  if (payModes.length === 0) return OBJECTIVE_WORD;
+  const missionOnly = payModes.every(m => m === 'mission'), noMission = payModes.every(m => m !== 'mission');
+  return missionOnly ? OBJECTIVE_WORD : noMission ? PRESENT_WORD : MIXED_WORD;
+}
